@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell,
+  Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell, ReferenceArea,
 } from "recharts";
 import { fetchDashboard } from "@/lib/api";
 
@@ -19,6 +19,7 @@ const fmtR = (n) => { if (n == null) return "\u2013"; const v = Number(n); if (v
 const fmtP = (n) => (n == null ? "\u2013" : `${Number(n).toFixed(1)}%`);
 const ds = (d) => d.toISOString().split("T")[0];
 const tickF = (v) => { const d = new Date(v + "T12:00:00"); return `${d.getDate()}/${d.getMonth() + 1}`; };
+const isWE = (d) => { const day = new Date(d + "T12:00:00").getDay(); return day === 0 || day === 6; };
 
 function Delta({ cur, prev, invert }) {
   if (prev == null || prev == 0 || cur == null) return null;
@@ -98,7 +99,7 @@ export default function Home() {
   const [showDP, setShowDP] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [data, setData] = useState({ kpis: {}, vendas_dia: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [] });
+  const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [] });
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
@@ -145,10 +146,14 @@ export default function Home() {
         { name: "pub_dia", sql: `SELECT data as dia, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY data ORDER BY data` },
         { name: "pub_conta", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes, round(avg(cvr)::numeric,2) as cvr FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY conta ORDER BY custo DESC` },
         { name: "pub_conta_prev", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks FROM ml_publicidade_diario WHERE data>='${prevF}' AND data<='${prevT}' ${cw2} GROUP BY conta` },
+        { name: "vendas_dia_prev", sql: `SELECT venda_data::date as dia, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY dia ORDER BY dia` },
+        { name: "kpis_prev", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw}` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
+        kpis_prev: (res.kpis_prev || [])[0] || {},
         vendas_dia: res.vendas_dia || [],
+        vendas_dia_prev: res.vendas_dia_prev || [],
         por_conta: res.por_conta || [],
         top_estados: res.top_estados || [],
         reclamacoes: res.reclamacoes || [],
@@ -219,30 +224,37 @@ export default function Home() {
               <KPI label="Tarifas ML" value={fmtR(k.tarifas_total)} color="var(--red)" />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
-              <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 10px 6px" }}>Vendas por Dia (qtd)</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={data.vendas_dia} barCategoryGap="15%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(data.vendas_dia.length / 10))} />
-                    <YAxis stroke="var(--dim)" fontSize={8} />
-                    <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
-                    <Bar dataKey="vendas" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 10px 6px" }}>Faturamento por Dia (R$)</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={data.vendas_dia} barCategoryGap="15%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(data.vendas_dia.length / 10))} />
-                    <YAxis stroke="var(--dim)" fontSize={8} tickFormatter={(v) => fmtR(v)} />
-                    <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
-                    <Bar dataKey="receita" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {[
+                { title: "Vendas por Dia (qtd)", key: "vendas", prevKey: "vendas", color: dark ? "#3B82F6" : "#2563EB", prevColor: dark ? "#1E3A5F" : "#BFDBFE", fmtFn: fmt, label: "Vendas" },
+                { title: "Faturamento por Dia (R$)", key: "receita", prevKey: "receita", color: dark ? "#22C55E" : "#16A34A", prevColor: dark ? "#14532D" : "#BBF7D0", fmtFn: fmtR, label: "Faturamento" },
+              ].map((chart) => {
+                const prev = data.vendas_dia_prev || [];
+                const cur = data.vendas_dia || [];
+                const merged = cur.map((d, i) => ({ ...d, [`prev_${chart.key}`]: prev[i] ? Number(prev[i][chart.key]) : 0 }));
+                const weekends = cur.filter((d) => isWE(d.dia)).map((d) => d.dia);
+                return (
+                  <div key={chart.title} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 6px 10px" }}>
+                      <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>{chart.title}</h3>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: chart.color }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Atual</span></div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: chart.prevColor, opacity: 0.7 }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Anterior</span></div>
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={merged} barCategoryGap="8%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(cur.length / 10))} />
+                        <YAxis stroke="var(--dim)" fontSize={8} tickFormatter={chart.key === "receita" ? (v) => fmtR(v) : undefined} />
+                        <Tooltip content={<ChartTT formatter={(v, n) => n.includes("Anterior") ? `${chart.fmtFn(v)} (anterior)` : chart.fmtFn(v)} />} />
+                        {weekends.map((d) => <ReferenceArea key={d} x1={d} x2={d} fill={dark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.04)"} />)}
+                        <Bar dataKey={`prev_${chart.key}`} name={`${chart.label} Anterior`} fill={chart.prevColor} opacity={0.5} radius={[2, 2, 0, 0]} />
+                        <Bar dataKey={chart.key} name={chart.label} fill={chart.color} radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })}
             </div>
             {(() => {
               const totals = (data.vendas_dia || []).reduce((a, d) => ({
