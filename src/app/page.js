@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Area, AreaChart,
+  Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell,
 } from "recharts";
 import { fetchDashboard } from "@/lib/api";
 
@@ -20,7 +20,6 @@ const fmtP = (n) => (n == null ? "\u2013" : `${Number(n).toFixed(1)}%`);
 const ds = (d) => d.toISOString().split("T")[0];
 const tickF = (v) => { const d = new Date(v + "T12:00:00"); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
-/* \u2500\u2500 helpers \u2500\u2500 */
 function Delta({ cur, prev, invert }) {
   if (prev == null || prev == 0 || cur == null) return null;
   const pct = ((cur - prev) / Math.abs(prev)) * 100;
@@ -34,7 +33,6 @@ function Delta({ cur, prev, invert }) {
   );
 }
 
-/* \u2500\u2500 components \u2500\u2500 */
 function KPI({ label, value, sub, color }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", position: "relative", overflow: "hidden" }}>
@@ -93,7 +91,6 @@ function Loader() {
 export default function Home() {
   const [dark, setDark] = useState(true);
   const [tab, setTab] = useState("vendas");
-  const [chartView, setChartView] = useState("ads");
   const [contas, setContas] = useState([...CONTAS_ALL]);
   const [preset, setPreset] = useState("30d");
   const [dateFrom, setDateFrom] = useState("");
@@ -166,12 +163,6 @@ export default function Home() {
   useEffect(() => { load(); }, [load]);
 
   const k = data.kpis || {};
-  const cvCfg = {
-    ads: { k: ["via_ads", "organico"], n: ["Via Ads", "Org\u00e2nico"], c: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
-    envio: { k: ["fulfillment", "normal"], n: ["Fulfillment", "Normal"], c: [dark ? "#06B6D4" : "#0891B2", dark ? "#F97316" : "#EA580C"] },
-    listing: { k: ["premium", "classico"], n: ["Premium", "Cl\u00e1ssico"], c: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
-  };
-  const cv = cvCfg[chartView];
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font)" }}>
@@ -227,24 +218,76 @@ export default function Home() {
               <KPI label="Via Ads" value={fmtP(k.pct_ads)} sub={`${fmt(k.via_ads)} vendas`} color="var(--purple)" />
               <KPI label="Tarifas ML" value={fmtR(k.tarifas_total)} color="var(--red)" />
             </div>
-            <Sec icon="\ud83d\udcca">Vendas por Dia</Sec>
-            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-              <div style={{ display: "flex", gap: 2, marginBottom: 10, background: "var(--bg)", padding: 2, borderRadius: 5, width: "fit-content" }}>
-                <MTab on={chartView === "ads"} onClick={() => setChartView("ads")}>Org\u00e2nico vs Ads</MTab>
-                <MTab on={chartView === "envio"} onClick={() => setChartView("envio")}>Normal vs Fulfillment</MTab>
-                <MTab on={chartView === "listing"} onClick={() => setChartView("listing")}>Cl\u00e1ssico vs Premium</MTab>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+              <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 10px 6px" }}>Vendas por Dia (qtd)</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={data.vendas_dia} barCategoryGap="15%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(data.vendas_dia.length / 10))} />
+                    <YAxis stroke="var(--dim)" fontSize={8} />
+                    <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
+                    <Bar dataKey="vendas" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={data.vendas_dia} barCategoryGap="12%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="dia" stroke="var(--dim)" fontSize={9} tickFormatter={tickF} interval={Math.max(0, Math.floor(data.vendas_dia.length / 15))} />
-                  <YAxis stroke="var(--dim)" fontSize={9} />
-                  <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
-                  <Bar dataKey={cv.k[0]} name={cv.n[0]} stackId="a" fill={cv.c[0]} />
-                  <Bar dataKey={cv.k[1]} name={cv.n[1]} stackId="a" fill={cv.c[1]} radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 10px 6px" }}>Faturamento por Dia (R$)</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={data.vendas_dia} barCategoryGap="15%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(data.vendas_dia.length / 10))} />
+                    <YAxis stroke="var(--dim)" fontSize={8} tickFormatter={(v) => fmtR(v)} />
+                    <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                    <Bar dataKey="receita" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
+            {(() => {
+              const totals = (data.vendas_dia || []).reduce((a, d) => ({
+                ads: (a.ads || 0) + (Number(d.via_ads) || 0),
+                org: (a.org || 0) + (Number(d.organico) || 0),
+                full: (a.full || 0) + (Number(d.fulfillment) || 0),
+                norm: (a.norm || 0) + (Number(d.normal) || 0),
+                prem: (a.prem || 0) + (Number(d.premium) || 0),
+                clas: (a.clas || 0) + (Number(d.classico) || 0),
+              }), {});
+              const pies = [
+                { title: "Ads vs Org\u00e2nico", data: [{ name: "Via Ads", value: totals.ads || 0 }, { name: "Org\u00e2nico", value: totals.org || 0 }], colors: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
+                { title: "Fulfillment vs Normal", data: [{ name: "Fulfillment", value: totals.full || 0 }, { name: "Normal", value: totals.norm || 0 }], colors: [dark ? "#06B6D4" : "#0891B2", dark ? "#F97316" : "#EA580C"] },
+                { title: "Premium vs Cl\u00e1ssico", data: [{ name: "Premium", value: totals.prem || 0 }, { name: "Cl\u00e1ssico", value: totals.clas || 0 }], colors: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
+              ];
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 }}>
+                  {pies.map((p) => {
+                    const total = p.data.reduce((a, d) => a + d.value, 0);
+                    return (
+                      <div key={p.title} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 8px", textAlign: "center" }}>
+                        <h3 style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 4px" }}>{p.title}</h3>
+                        <ResponsiveContainer width="100%" height={150}>
+                          <PieChart>
+                            <Pie data={p.data} cx="50%" cy="50%" innerRadius={35} outerRadius={58} paddingAngle={3} dataKey="value" stroke="none">
+                              {p.data.map((_, i) => <Cell key={i} fill={p.colors[i]} />)}
+                            </Pie>
+                            <Tooltip content={<ChartTT formatter={(v, n) => `${fmt(v)} (${total > 0 ? ((v / total) * 100).toFixed(0) : 0}%)`} />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 2 }}>
+                          {p.data.map((d, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.colors[i] }} />
+                              <span style={{ fontSize: 9, color: "var(--muted)" }}>{d.name}</span>
+                              <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{total > 0 ? ((d.value / total) * 100).toFixed(0) : 0}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
               <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                 <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 12px" }}>Por Conta</h3>
