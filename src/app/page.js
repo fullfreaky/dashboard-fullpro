@@ -20,6 +20,21 @@ const fmtP = (n) => (n == null ? "\u2013" : `${Number(n).toFixed(1)}%`);
 const ds = (d) => d.toISOString().split("T")[0];
 const tickF = (v) => { const d = new Date(v + "T12:00:00"); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
+/* \u2500\u2500 helpers \u2500\u2500 */
+function Delta({ cur, prev, invert }) {
+  if (prev == null || prev == 0 || cur == null) return null;
+  const pct = ((cur - prev) / Math.abs(prev)) * 100;
+  if (Math.abs(pct) < 0.5) return null;
+  const up = pct > 0;
+  const good = invert ? !up : up;
+  return (
+    <span style={{ fontSize: 8, fontWeight: 700, color: good ? "var(--green)" : "var(--red)", marginLeft: 3, whiteSpace: "nowrap" }}>
+      {up ? "\u25B2" : "\u25BC"} {Math.abs(pct).toFixed(0)}%
+    </span>
+  );
+}
+
+/* \u2500\u2500 components \u2500\u2500 */
 function KPI({ label, value, sub, color }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", position: "relative", overflow: "hidden" }}>
@@ -86,7 +101,7 @@ export default function Home() {
   const [showDP, setShowDP] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [data, setData] = useState({ kpis: {}, vendas_dia: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [] });
+  const [data, setData] = useState({ kpis: {}, vendas_dia: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [] });
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
@@ -118,6 +133,11 @@ export default function Home() {
     const { f, t } = dates;
     const cw = contaW;
     const cw2 = contas.length < 4 ? `AND conta IN (${contas.map((c) => `'${c}'`).join(",")})` : "";
+    const df = new Date(f + "T12:00:00"); const dt = new Date(t + "T12:00:00");
+    const span = Math.round((dt - df) / 86400000);
+    const pf = new Date(df); pf.setDate(pf.getDate() - span - 1);
+    const pt = new Date(df); pt.setDate(pt.getDate() - 1);
+    const prevF = ds(pf); const prevT = ds(pt);
     try {
       const res = await fetchDashboard([
         { name: "kpis", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads, round(100.0*count(*) filter (where is_publicidade)/nullif(count(*),0),1) as pct_ads, count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao') as reclamacoes, round(100.0*count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao')/nullif(count(*),0),1) as pct_reclamacao, count(*) filter (where status='cancelled') as canceladas, round(100.0*count(*) filter (where status='cancelled')/nullif(count(*),0),1) as pct_cancelada, round(sum(tarifa_venda+tarifa_envio)::numeric) as tarifas_total, round(sum(cancelamentos)::numeric) as valor_cancelamentos, round(sum(receita_envio)::numeric) as receita_frete FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw}` },
@@ -127,6 +147,7 @@ export default function Home() {
         { name: "reclamacoes", sql: `SELECT reclamacao, count(*) as total, round(sum(receita_produtos)::numeric) as receita_envolvida, round(sum(cancelamentos)::numeric) as valor_devolvido FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} AND reclamacao IS NOT NULL AND reclamacao != 'Sem reclamacao' GROUP BY reclamacao ORDER BY total DESC LIMIT 10` },
         { name: "pub_dia", sql: `SELECT data as dia, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY data ORDER BY data` },
         { name: "pub_conta", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes, round(avg(cvr)::numeric,2) as cvr FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY conta ORDER BY custo DESC` },
+        { name: "pub_conta_prev", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks FROM ml_publicidade_diario WHERE data>='${prevF}' AND data<='${prevT}' ${cw2} GROUP BY conta` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
@@ -136,6 +157,7 @@ export default function Home() {
         reclamacoes: res.reclamacoes || [],
         pub_dia: res.pub_dia || [],
         pub_conta: res.pub_conta || [],
+        pub_conta_prev: res.pub_conta_prev || [],
       });
     } catch (e) { console.error(e); setErr(e.message); }
     setLoading(false);
@@ -315,19 +337,32 @@ export default function Home() {
             </div>
             <Sec icon="\ud83c\udfea">Por Conta</Sec>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((data.pub_conta || []).length || 1, 4)},1fr)`, gap: 10 }}>
-              {(data.pub_conta || []).map((c) => (
+              {(data.pub_conta || []).map((c) => {
+                const prev = (data.pub_conta_prev || []).find((p) => p.conta === c.conta) || {};
+                return (
                 <div key={c.conta} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, borderLeft: `3px solid ${ccHex(c.conta, dark)}` }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{CONTA_LABELS[c.conta] || c.conta}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                    {[{ l: "Custo", v: fmtR(c.custo), cl: "var(--red)" }, { l: "Receita", v: fmtR(c.receita_ads), cl: "var(--green)" }, { l: "ACOS", v: fmtP(c.acos), cl: "var(--text)" }, { l: "ROAS", v: c.roas ? `${c.roas}x` : "\u2013", cl: "var(--text)" }].map((m, i) => (
-                      <div key={i}>
-                        <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>{m.l}</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: m.cl }}>{m.v}</div>
-                      </div>
-                    ))}
+                    <div>
+                      <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>Custo</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--red)", display: "flex", alignItems: "center" }}>{fmtR(c.custo)}<Delta cur={c.custo} prev={prev.custo} invert /></div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>Receita</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)", display: "flex", alignItems: "center" }}>{fmtR(c.receita_ads)}<Delta cur={c.receita_ads} prev={prev.receita_ads} /></div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>ACOS</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)", display: "flex", alignItems: "center" }}>{fmtP(c.acos)}<Delta cur={c.acos} prev={prev.acos} invert /></div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>ROAS</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)", display: "flex", alignItems: "center" }}>{c.roas ? `${c.roas}x` : "\u2013"}<Delta cur={c.roas} prev={prev.roas} /></div>
+                    </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </>)}
           {tab === "problemas" && (<>
