@@ -9,8 +9,8 @@ import { fetchDashboard } from "@/lib/api";
 const CONTAS_ALL = ["fullpro", "onroad", "darkstorm", "distribuidora"];
 const CONTA_LABELS = { fullpro: "FullPro", onroad: "OnRoad", darkstorm: "DarkStorm", distribuidora: "Distrib." };
 const ccHex = (c, dark) => {
-  const d = { fullpro: "#F59E0B", onroad: "#3B82F6", darkstorm: "#A855F7", distribuidora: "#06B6D4" };
-  const l = { fullpro: "#D97706", onroad: "#2563EB", darkstorm: "#7C3AED", distribuidora: "#0891B2" };
+  const d = { fullpro: "#EF4444", onroad: "#F97316", darkstorm: "#6B7280", distribuidora: "#3B82F6" };
+  const l = { fullpro: "#DC2626", onroad: "#EA580C", darkstorm: "#4B5563", distribuidora: "#2563EB" };
   return (dark ? d : l)[c] || "#6B7A8D";
 };
 
@@ -225,8 +225,8 @@ export default function Home() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
               {[
-                { title: "Vendas por Dia (qtd)", key: "vendas", prevKey: "vendas", color: dark ? "#3B82F6" : "#2563EB", prevColor: dark ? "#1E3A5F" : "#BFDBFE", fmtFn: fmt, label: "Vendas" },
-                { title: "Faturamento por Dia (R$)", key: "receita", prevKey: "receita", color: dark ? "#22C55E" : "#16A34A", prevColor: dark ? "#14532D" : "#BBF7D0", fmtFn: fmtR, label: "Faturamento" },
+                { title: "Vendas por Dia (qtd)", key: "vendas", color: dark ? "#3B82F6" : "#2563EB", prevColor: dark ? "#1E3A5F" : "#BFDBFE", fmtFn: fmt, label: "Vendas" },
+                { title: "Faturamento por Dia (R$)", key: "receita", color: dark ? "#22C55E" : "#16A34A", prevColor: dark ? "#14532D" : "#BBF7D0", fmtFn: fmtR, label: "Faturamento" },
               ].map((chart) => {
                 const prev = data.vendas_dia_prev || [];
                 const cur = data.vendas_dia || [];
@@ -247,7 +247,7 @@ export default function Home() {
                         <XAxis dataKey="dia" stroke="var(--dim)" fontSize={8} tickFormatter={tickF} interval={Math.max(0, Math.floor(cur.length / 10))} />
                         <YAxis stroke="var(--dim)" fontSize={8} tickFormatter={chart.key === "receita" ? (v) => fmtR(v) : undefined} />
                         <Tooltip content={<ChartTT formatter={(v, n) => n.includes("Anterior") ? `${chart.fmtFn(v)} (anterior)` : chart.fmtFn(v)} />} />
-                        {weekends.map((d) => <ReferenceArea key={d} x1={d} x2={d} fill={dark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.04)"} />)}
+                        {weekends.map((d) => <ReferenceArea key={d} x1={d} x2={d} fill={dark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)"} />)}
                         <Bar dataKey={`prev_${chart.key}`} name={`${chart.label} Anterior`} fill={chart.prevColor} opacity={0.5} radius={[2, 2, 0, 0]} />
                         <Bar dataKey={chart.key} name={chart.label} fill={chart.color} radius={[2, 2, 0, 0]} />
                       </BarChart>
