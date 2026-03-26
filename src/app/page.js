@@ -14,13 +14,12 @@ const ccHex = (c, dark) => {
   return (dark ? d : l)[c] || "#6B7A8D";
 };
 
-const fmt = (n) => { if (n == null) return "–"; const v = Number(n); if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`; if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`; return v.toLocaleString("pt-BR"); };
-const fmtR = (n) => { if (n == null) return "–"; const v = Number(n); if (v >= 1e6) return `R$ ${(v / 1e6).toFixed(2)}M`; if (v >= 1e3) return `R$ ${(v / 1e3).toFixed(1)}k`; return `R$ ${v.toLocaleString("pt-BR")}`; };
-const fmtP = (n) => (n == null ? "–" : `${Number(n).toFixed(1)}%`);
+const fmt = (n) => { if (n == null) return "\u2013"; const v = Number(n); if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`; if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`; return v.toLocaleString("pt-BR"); };
+const fmtR = (n) => { if (n == null) return "\u2013"; const v = Number(n); if (v >= 1e6) return `R$ ${(v / 1e6).toFixed(2)}M`; if (v >= 1e3) return `R$ ${(v / 1e3).toFixed(1)}k`; return `R$ ${v.toLocaleString("pt-BR")}`; };
+const fmtP = (n) => (n == null ? "\u2013" : `${Number(n).toFixed(1)}%`);
 const ds = (d) => d.toISOString().split("T")[0];
 const tickF = (v) => { const d = new Date(v + "T12:00:00"); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
-/* ── components ── */
 function KPI({ label, value, sub, color }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", position: "relative", overflow: "hidden" }}>
@@ -76,7 +75,6 @@ function Loader() {
   );
 }
 
-/* ══ MAIN ══ */
 export default function Home() {
   const [dark, setDark] = useState(true);
   const [tab, setTab] = useState("vendas");
@@ -127,8 +125,8 @@ export default function Home() {
         { name: "por_conta", sql: `SELECT conta, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads, count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao') as reclamacoes, round(sum(cancelamentos)::numeric) as valor_cancelamentos FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY conta ORDER BY receita DESC` },
         { name: "top_estados", sql: `SELECT coalesce(estado,'N/I') as estado, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY estado ORDER BY vendas DESC LIMIT 10` },
         { name: "reclamacoes", sql: `SELECT reclamacao, count(*) as total, round(sum(receita_produtos)::numeric) as receita_envolvida, round(sum(cancelamentos)::numeric) as valor_devolvido FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} AND reclamacao IS NOT NULL AND reclamacao != 'Sem reclamacao' GROUP BY reclamacao ORDER BY total DESC LIMIT 10` },
-        { name: "pub_dia", sql: `SELECT data as dia, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round(avg(acos)::numeric,1) as acos, round(avg(roas)::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY data ORDER BY data` },
-        { name: "pub_conta", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round(avg(acos)::numeric,1) as acos, round(avg(roas)::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes, round(avg(cvr)::numeric,2) as cvr FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY conta ORDER BY custo DESC` },
+        { name: "pub_dia", sql: `SELECT data as dia, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY data ORDER BY data` },
+        { name: "pub_conta", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes, round(avg(cvr)::numeric,2) as cvr FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY conta ORDER BY custo DESC` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
@@ -147,16 +145,14 @@ export default function Home() {
 
   const k = data.kpis || {};
   const cvCfg = {
-    ads: { k: ["via_ads", "organico"], n: ["Via Ads", "Orgânico"], c: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
+    ads: { k: ["via_ads", "organico"], n: ["Via Ads", "Org\u00e2nico"], c: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
     envio: { k: ["fulfillment", "normal"], n: ["Fulfillment", "Normal"], c: [dark ? "#06B6D4" : "#0891B2", dark ? "#F97316" : "#EA580C"] },
-    listing: { k: ["premium", "classico"], n: ["Premium", "Clássico"], c: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
+    listing: { k: ["premium", "classico"], n: ["Premium", "Cl\u00e1ssico"], c: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
   };
   const cv = cvCfg[chartView];
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font)" }}>
-
-      {/* ═══ HEADER ═══ */}
       <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border)", background: "var(--card)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontSize: 8, color: "var(--accent)", fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase" }}>FullPro</div>
@@ -167,67 +163,54 @@ export default function Home() {
             {["7d", "30d", "90d", "12m", "all"].map((p) => (
               <MTab key={p} on={preset === p} onClick={() => selectPreset(p)}>{p === "all" ? "Tudo" : p}</MTab>
             ))}
-            <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>📅</MTab>
+            <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>\ud83d\udcc5</MTab>
           </div>
           <button onClick={() => setDark((d) => !d)} style={{ width: 32, height: 32, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {dark ? "☀️" : "🌙"}
+            {dark ? "\u2600\ufe0f" : "\ud83c\udf19"}
           </button>
         </div>
       </div>
-
-      {/* date picker */}
       {showDP && (
         <div style={{ padding: "10px 22px", background: "var(--card)", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>De:</span>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 10px", fontSize: 12, colorScheme: dark ? "dark" : "light" }} />
-          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Até:</span>
+          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>At\u00e9:</span>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 10px", fontSize: 12, colorScheme: dark ? "dark" : "light" }} />
           <button onClick={applyDates} style={{ padding: "5px 14px", fontSize: 11, fontWeight: 700, background: "var(--accent)", color: "#000", border: "none", borderRadius: 6, cursor: "pointer" }}>Aplicar</button>
         </div>
       )}
-
-      {/* conta tags */}
       <div style={{ padding: "10px 22px", display: "flex", gap: 5, alignItems: "center", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
         <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginRight: 2 }}>Contas:</span>
         <Tag on={contas.length === 4} onClick={() => setContas([...CONTAS_ALL])}>Todas</Tag>
         {CONTAS_ALL.map((k) => (
           <Tag key={k} on={contas.includes(k)} onClick={() => toggleConta(k)} color={ccHex(k, dark)}>{CONTA_LABELS[k]}</Tag>
         ))}
-        {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>⏳ Carregando...</span>}
+        {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>\u23f3 Carregando...</span>}
       </div>
-
-      {/* ═══ CONTENT ═══ */}
       <div style={{ padding: "18px 22px", maxWidth: 1400, margin: "0 auto" }}>
-
-        {/* tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 18, background: "var(--card)", padding: 3, borderRadius: 8, width: "fit-content", border: "1px solid var(--border)" }}>
-          {[{ id: "vendas", l: "Vendas", i: "📦" }, { id: "publicidade", l: "Publicidade", i: "📢" }, { id: "problemas", l: "Reclamações", i: "⚠️" }].map((t) => (
+          {[{ id: "vendas", l: "Vendas", i: "\ud83d\udce6" }, { id: "publicidade", l: "Publicidade", i: "\ud83d\udce2" }, { id: "problemas", l: "Reclama\u00e7\u00f5es", i: "\u26a0\ufe0f" }].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#000" : "var(--muted)", cursor: "pointer", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
               <span style={{ fontSize: 12 }}>{t.i}</span>{t.l}
             </button>
           ))}
         </div>
-
-        {err && <div style={{ padding: 12, background: "var(--red)" + "22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
-
+        {err && <div style={{ padding: 12, background: "var(--red)22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
         {loading ? <Loader /> : (<>
-
-          {/* ═══ VENDAS ═══ */}
           {tab === "vendas" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
               <KPI label="Receita" value={fmtR(k.receita)} color="var(--green)" />
               <KPI label="Vendas" value={fmt(k.total_vendas)} color="var(--blue)" />
-              <KPI label="Ticket Médio" value={fmtR(k.ticket_medio)} color="var(--accent)" />
+              <KPI label="Ticket M\u00e9dio" value={fmtR(k.ticket_medio)} color="var(--accent)" />
               <KPI label="Via Ads" value={fmtP(k.pct_ads)} sub={`${fmt(k.via_ads)} vendas`} color="var(--purple)" />
               <KPI label="Tarifas ML" value={fmtR(k.tarifas_total)} color="var(--red)" />
             </div>
-
-            <Sec icon="📊">Vendas por Dia</Sec>
+            <Sec icon="\ud83d\udcca">Vendas por Dia</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
               <div style={{ display: "flex", gap: 2, marginBottom: 10, background: "var(--bg)", padding: 2, borderRadius: 5, width: "fit-content" }}>
-                <MTab on={chartView === "ads"} onClick={() => setChartView("ads")}>Orgânico vs Ads</MTab>
+                <MTab on={chartView === "ads"} onClick={() => setChartView("ads")}>Org\u00e2nico vs Ads</MTab>
                 <MTab on={chartView === "envio"} onClick={() => setChartView("envio")}>Normal vs Fulfillment</MTab>
-                <MTab on={chartView === "listing"} onClick={() => setChartView("listing")}>Clássico vs Premium</MTab>
+                <MTab on={chartView === "listing"} onClick={() => setChartView("listing")}>Cl\u00e1ssico vs Premium</MTab>
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.vendas_dia} barCategoryGap="12%">
@@ -240,9 +223,7 @@ export default function Home() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-              {/* por conta */}
               <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                 <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 12px" }}>Por Conta</h3>
                 {(data.por_conta || []).map((c) => {
@@ -268,7 +249,6 @@ export default function Home() {
                   );
                 })}
               </div>
-              {/* top estados */}
               <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                 <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 12px" }}>Top Estados</h3>
                 {(data.top_estados || []).map((e, i) => {
@@ -287,8 +267,6 @@ export default function Home() {
               </div>
             </div>
           </>)}
-
-          {/* ═══ PUBLICIDADE ═══ */}
           {tab === "publicidade" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
               {(() => {
@@ -300,12 +278,11 @@ export default function Home() {
                   <KPI label="Receita Ads" value={fmtR(t.receita)} color="var(--green)" />
                   <KPI label="ACOS" value={fmtP(acos)} sub="Custo / Receita" color="var(--accent)" />
                   <KPI label="ROAS" value={`${roas.toFixed(1)}x`} sub="Receita / Custo" color="var(--blue)" />
-                  <KPI label="Clicks" value={fmt(t.clicks)} sub={`${fmt(t.imp)} impressões`} color="var(--purple)" />
+                  <KPI label="Clicks" value={fmt(t.clicks)} sub={`${fmt(t.imp)} impress\u00f5es`} color="var(--purple)" />
                 </>);
               })()}
             </div>
-
-            <Sec icon="💰">Custo vs Receita Ads</Sec>
+            <Sec icon="\ud83d\udcb0">Custo vs Receita Ads</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={data.pub_dia || []}>
@@ -322,8 +299,7 @@ export default function Home() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-
-            <Sec icon="📈">ACOS / ROAS</Sec>
+            <Sec icon="\ud83d\udcc8">ACOS / ROAS</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={data.pub_dia || []}>
@@ -337,14 +313,13 @@ export default function Home() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-
-            <Sec icon="🏪">Por Conta</Sec>
+            <Sec icon="\ud83c\udfea">Por Conta</Sec>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((data.pub_conta || []).length || 1, 4)},1fr)`, gap: 10 }}>
               {(data.pub_conta || []).map((c) => (
                 <div key={c.conta} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, borderLeft: `3px solid ${ccHex(c.conta, dark)}` }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{CONTA_LABELS[c.conta] || c.conta}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                    {[{ l: "Custo", v: fmtR(c.custo), cl: "var(--red)" }, { l: "Receita", v: fmtR(c.receita_ads), cl: "var(--green)" }, { l: "ACOS", v: fmtP(c.acos), cl: "var(--text)" }, { l: "ROAS", v: c.roas ? `${c.roas}x` : "–", cl: "var(--text)" }].map((m, i) => (
+                    {[{ l: "Custo", v: fmtR(c.custo), cl: "var(--red)" }, { l: "Receita", v: fmtR(c.receita_ads), cl: "var(--green)" }, { l: "ACOS", v: fmtP(c.acos), cl: "var(--text)" }, { l: "ROAS", v: c.roas ? `${c.roas}x` : "\u2013", cl: "var(--text)" }].map((m, i) => (
                       <div key={i}>
                         <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>{m.l}</div>
                         <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: m.cl }}>{m.v}</div>
@@ -355,18 +330,15 @@ export default function Home() {
               ))}
             </div>
           </>)}
-
-          {/* ═══ RECLAMAÇÕES ═══ */}
           {tab === "problemas" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
-              <KPI label="Reclamações" value={fmt(k.reclamacoes)} sub={`${fmtP(k.pct_reclamacao)} das vendas`} color="var(--red)" />
+              <KPI label="Reclama\u00e7\u00f5es" value={fmt(k.reclamacoes)} sub={`${fmtP(k.pct_reclamacao)} das vendas`} color="var(--red)" />
               <KPI label="Cancelamentos" value={fmt(k.canceladas)} sub={`${fmtP(k.pct_cancelada)} das vendas`} color="var(--orange)" />
               <KPI label="Valor Devolvido" value={fmtR(k.valor_cancelamentos)} sub="cancelamentos" color="var(--red)" />
               <KPI label="Frete Recebido" value={fmtR(k.receita_frete)} color="var(--cyan)" />
               <KPI label="Vendas OK" value={fmt((k.total_vendas || 0) - (k.canceladas || 0))} color="var(--green)" />
             </div>
-
-            <Sec icon="📋">Tipos de Reclamação</Sec>
+            <Sec icon="\ud83d\udccb">Tipos de Reclama\u00e7\u00e3o</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
                 <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Tipo</span>
@@ -375,7 +347,7 @@ export default function Home() {
                 <span style={{ width: 85, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, textAlign: "right" }}>Devolvido</span>
               </div>
               {(data.reclamacoes || []).map((r, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: i < (data.reclamacoes || []).length - 1 ? "1px solid var(--border)" + "22" : "none" }}>
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: i < (data.reclamacoes || []).length - 1 ? "1px solid var(--border)22" : "none" }}>
                   <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 5, height: 5, borderRadius: "50%", background: r.reclamacao?.includes("opened") ? "var(--red)" : "var(--orange)", flexShrink: 0 }} />
                     <span style={{ fontSize: 11, fontWeight: 500 }}>{r.reclamacao}</span>
@@ -386,17 +358,16 @@ export default function Home() {
                 </div>
               ))}
               {(!data.reclamacoes || data.reclamacoes.length === 0) && (
-                <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Nenhuma reclamação no período 🎉</div>
+                <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Nenhuma reclama\u00e7\u00e3o no per\u00edodo \ud83c\udf89</div>
               )}
             </div>
-
-            <Sec icon="🏪">Por Conta</Sec>
+            <Sec icon="\ud83c\udfea">Por Conta</Sec>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((data.por_conta || []).length || 1, 4)},1fr)`, gap: 10 }}>
               {(data.por_conta || []).map((c) => (
                 <div key={c.conta} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, borderLeft: `3px solid ${ccHex(c.conta, dark)}` }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 7 }}>{CONTA_LABELS[c.conta] || c.conta}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                    {[{ l: "Reclamações", v: fmt(c.reclamacoes), cl: "var(--red)" }, { l: "% Vendas", v: c.vendas > 0 ? fmtP((c.reclamacoes / c.vendas) * 100) : "–", cl: "var(--text)" }, { l: "Vendas", v: fmt(c.vendas), cl: "var(--muted)" }, { l: "Devolvido", v: fmtR(c.valor_cancelamentos), cl: "var(--red)" }].map((m, i) => (
+                    {[{ l: "Reclama\u00e7\u00f5es", v: fmt(c.reclamacoes), cl: "var(--red)" }, { l: "% Vendas", v: c.vendas > 0 ? fmtP((c.reclamacoes / c.vendas) * 100) : "\u2013", cl: "var(--text)" }, { l: "Vendas", v: fmt(c.vendas), cl: "var(--muted)" }, { l: "Devolvido", v: fmtR(c.valor_cancelamentos), cl: "var(--red)" }].map((m, i) => (
                       <div key={i}>
                         <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>{m.l}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "var(--mono)", color: m.cl }}>{m.v}</div>
@@ -407,11 +378,9 @@ export default function Home() {
               ))}
             </div>
           </>)}
-
         </>)}
-
         <div style={{ textAlign: "center", padding: "28px 0 14px", fontSize: 9, color: "var(--dim)" }}>
-          FullPro Dashboard • {dates.f} → {dates.t} • {contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}
+          FullPro Dashboard \u2022 {dates.f} \u2192 {dates.t} \u2022 {contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}
         </div>
       </div>
     </div>
