@@ -5,6 +5,7 @@ import {
   Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell, ReferenceArea,
 } from "recharts";
 import { fetchDashboard } from "@/lib/api";
+import BrazilMap from "@/components/BrazilMap";
 
 const CONTAS_ALL = ["fullpro", "onroad", "darkstorm", "distribuidora"];
 const CONTA_LABELS = { fullpro: "FullPro", onroad: "OnRoad", darkstorm: "DarkStorm", distribuidora: "Distrib." };
@@ -141,7 +142,7 @@ export default function Home() {
         { name: "kpis", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads, round(100.0*count(*) filter (where is_publicidade)/nullif(count(*),0),1) as pct_ads, count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao') as reclamacoes, round(100.0*count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao')/nullif(count(*),0),1) as pct_reclamacao, count(*) filter (where status='cancelled') as canceladas, round(100.0*count(*) filter (where status='cancelled')/nullif(count(*),0),1) as pct_cancelada, round(sum(tarifa_venda+tarifa_envio)::numeric) as tarifas_total, round(sum(cancelamentos)::numeric) as valor_cancelamentos, round(sum(receita_envio)::numeric) as receita_frete FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw}` },
         { name: "vendas_dia", sql: `SELECT venda_data::date as dia, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, count(*) filter (where is_publicidade) as via_ads, count(*) filter (where not is_publicidade) as organico, count(*) filter (where forma_envio='fulfillment') as fulfillment, count(*) filter (where forma_envio!='fulfillment' or forma_envio is null) as normal, count(*) filter (where listing_type='gold_pro') as premium, count(*) filter (where listing_type='gold_special') as classico FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY dia ORDER BY dia` },
         { name: "por_conta", sql: `SELECT conta, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads, count(*) filter (where reclamacao is not null and reclamacao != 'Sem reclamacao') as reclamacoes, round(sum(cancelamentos)::numeric) as valor_cancelamentos FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY conta ORDER BY receita DESC` },
-        { name: "top_estados", sql: `SELECT coalesce(estado,'N/I') as estado, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY estado ORDER BY vendas DESC LIMIT 10` },
+        { name: "top_estados", sql: `SELECT coalesce(estado,'N/I') as estado, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY estado ORDER BY vendas DESC LIMIT 27` },
         { name: "reclamacoes", sql: `SELECT reclamacao, count(*) as total, round(sum(receita_produtos)::numeric) as receita_envolvida, round(sum(cancelamentos)::numeric) as valor_devolvido FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} AND reclamacao IS NOT NULL AND reclamacao != 'Sem reclamacao' GROUP BY reclamacao ORDER BY total DESC LIMIT 10` },
         { name: "pub_dia", sql: `SELECT data as dia, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY data ORDER BY data` },
         { name: "pub_conta", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks, sum(impressoes) as impressoes, round(avg(cvr)::numeric,2) as cvr FROM ml_publicidade_diario WHERE data>='${f}' AND data<='${t}' ${cw2} GROUP BY conta ORDER BY custo DESC` },
@@ -327,20 +328,8 @@ export default function Home() {
                 })}
               </div>
               <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
-                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 12px" }}>Top Estados</h3>
-                {(data.top_estados || []).map((e, i) => {
-                  const mx = (data.top_estados || [])[0]?.vendas || 1;
-                  return (
-                    <div key={e.estado} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-                      <span style={{ fontSize: 8, color: "var(--dim)", width: 12, textAlign: "right", fontFamily: "var(--mono)" }}>{i + 1}</span>
-                      <span style={{ fontSize: 10, fontWeight: 500, width: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.estado}</span>
-                      <div style={{ flex: 1, height: 3, background: "var(--bg)", borderRadius: 2 }}>
-                        <div style={{ height: "100%", borderRadius: 2, width: `${(e.vendas / mx) * 100}%`, background: "var(--accent)", transition: "width .5s" }} />
-                      </div>
-                      <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: "var(--muted)", minWidth: 35, textAlign: "right" }}>{fmt(e.vendas)}</span>
-                    </div>
-                  );
-                })}
+                <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 8px" }}>Vendas por Estado</h3>
+                <BrazilMap estados={data.top_estados || []} dark={dark} />
               </div>
             </div>
           </>)}
