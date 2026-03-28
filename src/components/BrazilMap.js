@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { PATHS, LABELS } from "./brazil-paths";
+import { PATHS } from "./brazil-paths";
 
 const UF = {"Acre":"AC","Alagoas":"AL","Amap\u00e1":"AP","Amazonas":"AM","Bahia":"BA","Cear\u00e1":"CE","Distrito Federal":"DF","Esp\u00edrito Santo":"ES","Goi\u00e1s":"GO","Maranh\u00e3o":"MA","Mato Grosso":"MT","Mato Grosso do Sul":"MS","Minas Gerais":"MG","Par\u00e1":"PA","Para\u00edba":"PB","Paran\u00e1":"PR","Pernambuco":"PE","Piau\u00ed":"PI","Rio de Janeiro":"RJ","Rio Grande do Norte":"RN","Rio Grande do Sul":"RS","Rond\u00f4nia":"RO","Roraima":"RR","Santa Catarina":"SC","S\u00e3o Paulo":"SP","Sergipe":"SE","Tocantins":"TO"};
 
@@ -33,12 +33,6 @@ export default function BrazilMap({ estados = [], dark = true }) {
             strokeWidth={hover === uf ? 1.5 : 0.5}
             style={{ cursor: "pointer", transition: "fill .2s, stroke .15s" }}
             onMouseEnter={() => setHover(uf)} onMouseLeave={() => setHover(null)} />
-        ))}
-        {Object.entries(LABELS).map(([uf, p]) => (
-          <text key={`t-${uf}`} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central"
-            fontSize={["DF","SE","AL","RN","PB","ES","RJ","SC"].includes(uf) ? 7 : 9} fontWeight={600}
-            fill={dark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.4)"}
-            style={{ pointerEvents: "none", fontFamily: "var(--mono)" }}>{uf}</text>
         ))}
       </svg>
       {hover && lookup[hover] && (
