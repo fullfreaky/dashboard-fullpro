@@ -15,13 +15,14 @@ const ccHex = (c, dark) => {
   return (dark ? d : l)[c] || "#6B7A8D";
 };
 
-const fmt = (n) => { if (n == null) return "\u2013"; const v = Number(n); if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`; if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`; return v.toLocaleString("pt-BR"); };
-const fmtR = (n) => { if (n == null) return "\u2013"; const v = Number(n); if (v >= 1e6) return `R$ ${(v / 1e6).toFixed(2)}M`; if (v >= 1e3) return `R$ ${(v / 1e3).toFixed(1)}k`; return `R$ ${v.toLocaleString("pt-BR")}`; };
-const fmtP = (n) => (n == null ? "\u2013" : `${Number(n).toFixed(1)}%`);
+const fmt = (n) => { if (n == null) return "–"; const v = Number(n); if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`; if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`; return v.toLocaleString("pt-BR"); };
+const fmtR = (n) => { if (n == null) return "–"; const v = Number(n); if (v >= 1e6) return `R$ ${(v / 1e6).toFixed(2)}M`; if (v >= 1e3) return `R$ ${(v / 1e3).toFixed(1)}k`; return `R$ ${v.toLocaleString("pt-BR")}`; };
+const fmtP = (n) => (n == null ? "–" : `${Number(n).toFixed(1)}%`);
 const ds = (d) => d.toISOString().split("T")[0];
 const tickF = (v) => { const d = new Date(v + "T12:00:00"); return `${d.getDate()}/${d.getMonth() + 1}`; };
 const isWE = (d) => { const day = new Date(d + "T12:00:00").getDay(); return day === 0 || day === 6; };
 
+/* ── helpers ── */
 function Delta({ cur, prev, invert }) {
   if (prev == null || prev == 0 || cur == null) return null;
   const pct = ((cur - prev) / Math.abs(prev)) * 100;
@@ -35,6 +36,7 @@ function Delta({ cur, prev, invert }) {
   );
 }
 
+/* ── components ── */
 function KPI({ label, value, sub, color }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", position: "relative", overflow: "hidden" }}>
@@ -90,6 +92,7 @@ function Loader() {
   );
 }
 
+/* ══ MAIN ══ */
 export default function Home() {
   const [dark, setDark] = useState(true);
   const [tab, setTab] = useState("vendas");
@@ -132,6 +135,7 @@ export default function Home() {
     const { f, t } = dates;
     const cw = contaW;
     const cw2 = contas.length < 4 ? `AND conta IN (${contas.map((c) => `'${c}'`).join(",")})` : "";
+    // Calculate previous period dates for comparison
     const df = new Date(f + "T12:00:00"); const dt = new Date(t + "T12:00:00");
     const span = Math.round((dt - df) / 86400000);
     const pf = new Date(df); pf.setDate(pf.getDate() - span - 1);
@@ -151,8 +155,8 @@ export default function Home() {
         { name: "kpis_prev", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw}` },
         { name: "top_produtos", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 30` },
         { name: "top_produtos_prev", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY sku` },
-        { name: "top_categorias", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${f}' AND v.venda_data::date<='${t}' AND v.sku IS NOT NULL GROUP BY c.nome ORDER BY vendas DESC LIMIT 15` },
-        { name: "top_categorias_prev", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${prevF}' AND v.venda_data::date<='${prevT}' AND v.sku IS NOT NULL GROUP BY c.nome` },
+        { name: "top_categorias", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${f}' AND v.venda_data::date<='${t}' ${cw.replace(/conta/g,'v.conta')} AND v.sku IS NOT NULL GROUP BY c.nome ORDER BY vendas DESC LIMIT 15` },
+        { name: "top_categorias_prev", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${prevF}' AND v.venda_data::date<='${prevT}' ${cw.replace(/conta/g,'v.conta')} AND v.sku IS NOT NULL GROUP BY c.nome` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
@@ -180,6 +184,8 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font)" }}>
+
+      {/* ═══ HEADER ═══ */}
       <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border)", background: "var(--card)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontSize: 8, color: "var(--accent)", fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase" }}>FullPro</div>
@@ -190,52 +196,65 @@ export default function Home() {
             {["7d", "30d", "90d", "12m", "all"].map((p) => (
               <MTab key={p} on={preset === p} onClick={() => selectPreset(p)}>{p === "all" ? "Tudo" : p}</MTab>
             ))}
-            <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>\ud83d\udcc5</MTab>
+            <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>📅</MTab>
           </div>
           <button onClick={() => setDark((d) => !d)} style={{ width: 32, height: 32, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {dark ? "\u2600\ufe0f" : "\ud83c\udf19"}
+            {dark ? "☀️" : "🌙"}
           </button>
         </div>
       </div>
+
+      {/* date picker */}
       {showDP && (
         <div style={{ padding: "10px 22px", background: "var(--card)", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>De:</span>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 10px", fontSize: 12, colorScheme: dark ? "dark" : "light" }} />
-          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>At\u00e9:</span>
+          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Até:</span>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 10px", fontSize: 12, colorScheme: dark ? "dark" : "light" }} />
           <button onClick={applyDates} style={{ padding: "5px 14px", fontSize: 11, fontWeight: 700, background: "var(--accent)", color: "#000", border: "none", borderRadius: 6, cursor: "pointer" }}>Aplicar</button>
         </div>
       )}
+
+      {/* conta tags */}
       <div style={{ padding: "10px 22px", display: "flex", gap: 5, alignItems: "center", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
         <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginRight: 2 }}>Contas:</span>
         <Tag on={contas.length === 4} onClick={() => setContas([...CONTAS_ALL])}>Todas</Tag>
         {CONTAS_ALL.map((k) => (
           <Tag key={k} on={contas.includes(k)} onClick={() => toggleConta(k)} color={ccHex(k, dark)}>{CONTA_LABELS[k]}</Tag>
         ))}
-        {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>\u23f3 Carregando...</span>}
+        {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>⏳ Carregando...</span>}
       </div>
+
+      {/* ═══ CONTENT ═══ */}
       <div style={{ padding: "18px 22px", maxWidth: 1400, margin: "0 auto" }}>
+
+        {/* tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 18, background: "var(--card)", padding: 3, borderRadius: 8, width: "fit-content", border: "1px solid var(--border)" }}>
-          {[{ id: "vendas", l: "Vendas", i: "\ud83d\udce6" }, { id: "produtos", l: "Produtos", i: "🎯" }, { id: "publicidade", l: "Publicidade", i: "\ud83d\udce2" }, { id: "problemas", l: "Reclama\u00e7\u00f5es", i: "\u26a0\ufe0f" }].map((t) => (
+          {[{ id: "vendas", l: "Vendas", i: "📦" }, { id: "produtos", l: "Produtos", i: "🎯" }, { id: "publicidade", l: "Publicidade", i: "📢" }, { id: "problemas", l: "Reclamações", i: "⚠️" }].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#000" : "var(--muted)", cursor: "pointer", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
               <span style={{ fontSize: 12 }}>{t.i}</span>{t.l}
             </button>
           ))}
         </div>
-        {err && <div style={{ padding: 12, background: "var(--red)22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
+
+        {err && <div style={{ padding: 12, background: "var(--red)" + "22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
+
         {loading ? <Loader /> : (<>
+
+          {/* ═══ VENDAS ═══ */}
           {tab === "vendas" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
               <KPI label="Receita" value={fmtR(k.receita)} color="var(--green)" />
               <KPI label="Vendas" value={fmt(k.total_vendas)} color="var(--blue)" />
-              <KPI label="Ticket M\u00e9dio" value={fmtR(k.ticket_medio)} color="var(--accent)" />
+              <KPI label="Ticket Médio" value={fmtR(k.ticket_medio)} color="var(--accent)" />
               <KPI label="Via Ads" value={fmtP(k.pct_ads)} sub={`${fmt(k.via_ads)} vendas`} color="var(--purple)" />
               <KPI label="Tarifas ML" value={fmtR(k.tarifas_total)} color="var(--red)" />
             </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
               {[
-                { title: "Vendas por Dia (qtd)", key: "vendas", color: dark ? "#3B82F6" : "#2563EB", prevColor: dark ? "#1E3A5F" : "#BFDBFE", fmtFn: fmt, label: "Vendas" },
-                { title: "Faturamento por Dia (R$)", key: "receita", color: dark ? "#22C55E" : "#16A34A", prevColor: dark ? "#14532D" : "#BBF7D0", fmtFn: fmtR, label: "Faturamento" },
+                { title: "Vendas por Dia (qtd)", key: "vendas", prevKey: "vendas", color: dark ? "#3B82F6" : "#2563EB", prevColor: dark ? "#1E3A5F" : "#BFDBFE", fmtFn: fmt, label: "Vendas" },
+                { title: "Faturamento por Dia (R$)", key: "receita", prevKey: "receita", color: dark ? "#22C55E" : "#16A34A", prevColor: dark ? "#14532D" : "#BBF7D0", fmtFn: fmtR, label: "Faturamento" },
               ].map((chart) => {
                 const prev = data.vendas_dia_prev || [];
                 const cur = data.vendas_dia || [];
@@ -265,6 +284,7 @@ export default function Home() {
                 );
               })}
             </div>
+
             {(() => {
               const totals = (data.vendas_dia || []).reduce((a, d) => ({
                 ads: (a.ads || 0) + (Number(d.via_ads) || 0),
@@ -275,9 +295,9 @@ export default function Home() {
                 clas: (a.clas || 0) + (Number(d.classico) || 0),
               }), {});
               const pies = [
-                { title: "Ads vs Org\u00e2nico", data: [{ name: "Via Ads", value: totals.ads || 0 }, { name: "Org\u00e2nico", value: totals.org || 0 }], colors: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
+                { title: "Ads vs Orgânico", data: [{ name: "Via Ads", value: totals.ads || 0 }, { name: "Orgânico", value: totals.org || 0 }], colors: [dark ? "#A855F7" : "#7C3AED", dark ? "#22C55E" : "#16A34A"] },
                 { title: "Fulfillment vs Normal", data: [{ name: "Fulfillment", value: totals.full || 0 }, { name: "Normal", value: totals.norm || 0 }], colors: [dark ? "#06B6D4" : "#0891B2", dark ? "#F97316" : "#EA580C"] },
-                { title: "Premium vs Cl\u00e1ssico", data: [{ name: "Premium", value: totals.prem || 0 }, { name: "Cl\u00e1ssico", value: totals.clas || 0 }], colors: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
+                { title: "Premium vs Clássico", data: [{ name: "Premium", value: totals.prem || 0 }, { name: "Clássico", value: totals.clas || 0 }], colors: [dark ? "#F59E0B" : "#D97706", dark ? "#3B82F6" : "#2563EB"] },
               ];
               return (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 }}>
@@ -309,6 +329,7 @@ export default function Home() {
                 </div>
               );
             })()}
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
               <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                 <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 12px" }}>Por Conta</h3>
@@ -341,6 +362,127 @@ export default function Home() {
               </div>
             </div>
           </>)}
+
+          {/* ═══ PRODUTOS ═══ */}
+          {tab === "produtos" && (<>
+            {(() => {
+              const cur = data.top_produtos || [];
+              const prevMap = {};
+              (data.top_produtos_prev || []).forEach((p) => { prevMap[p.sku] = p; });
+              // Top 30 mais vendidos
+              const topVendidos = cur;
+              // Produtos que mais perderam vendas (min 3 no anterior, excluir N/I)
+              const perderam = Object.entries(prevMap)
+                .filter(([sku, p]) => sku !== "N/I" && Number(p.vendas) >= 3)
+                .map(([sku, p]) => {
+                  const c = cur.find((x) => x.sku === sku);
+                  const curV = c ? Number(c.vendas) : 0;
+                  const prevV = Number(p.vendas);
+                  return { sku, titulo: c?.titulo || sku, vendas_atual: curV, vendas_anterior: prevV, diff: curV - prevV, pct: prevV > 0 ? ((curV - prevV) / prevV * 100) : 0 };
+                })
+                .filter((x) => x.diff < 0)
+                .sort((a, b) => a.diff - b.diff)
+                .slice(0, 30);
+              // Categorias
+              const catCur = data.top_categorias || [];
+              const catPrevMap = {};
+              (data.top_categorias_prev || []).forEach((c) => { catPrevMap[c.categoria] = c; });
+              return (<>
+                <Sec icon="🏆">Top 30 Produtos - Período Atual</Sec>
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, overflowX: "auto" }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ width: 22, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>#</span>
+                    <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Produto</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Vendas</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
+                    <span style={{ width: 45, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
+                    <span style={{ width: 75, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Receita</span>
+                    <span style={{ width: 35, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Ads</span>
+                  </div>
+                  {topVendidos.map((p, i) => {
+                    const prev = prevMap[p.sku];
+                    const prevV = prev ? Number(prev.vendas) : 0;
+                    const diff = prevV > 0 ? ((Number(p.vendas) - prevV) / prevV * 100) : null;
+                    return (
+                      <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: i < topVendidos.length - 1 ? "1px solid var(--border)11" : "none" }}>
+                        <span style={{ width: 22, fontSize: 9, color: "var(--dim)", fontFamily: "var(--mono)", fontWeight: 600 }}>{i + 1}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 10, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</div>
+                          <div style={{ fontSize: 7, color: "var(--dim)", fontFamily: "var(--mono)" }}>{p.sku}</div>
+                        </div>
+                        <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(p.vendas)}</span>
+                        <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevV > 0 ? fmt(prevV) : "–"}</span>
+                        <span style={{ width: 45, fontSize: 9, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: diff == null ? "var(--muted)" : diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%` : "–"}</span>
+                        <span style={{ width: 75, fontSize: 10, fontFamily: "var(--mono)", textAlign: "right", color: "var(--accent)" }}>{fmtR(p.receita)}</span>
+                        <span style={{ width: 35, fontSize: 9, fontFamily: "var(--mono)", textAlign: "right", color: Number(p.via_ads) > 0 ? "var(--purple)" : "var(--dim)" }}>{fmt(p.via_ads)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Sec icon="📉">Produtos que Mais Perderam Vendas</Sec>
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, overflowX: "auto" }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ width: 22, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>#</span>
+                    <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Produto</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Atual</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
+                    <span style={{ width: 50, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Diff</span>
+                    <span style={{ width: 45, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
+                  </div>
+                  {perderam.length === 0 && <div style={{ textAlign: "center", padding: 20, color: "var(--muted)", fontSize: 11 }}>Sem dados suficientes para comparação</div>}
+                  {perderam.map((p, i) => (
+                    <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: i < perderam.length - 1 ? "1px solid var(--border)11" : "none" }}>
+                      <span style={{ width: 22, fontSize: 9, color: "var(--dim)", fontFamily: "var(--mono)", fontWeight: 600 }}>{i + 1}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</div>
+                        <div style={{ fontSize: 7, color: "var(--dim)", fontFamily: "var(--mono)" }}>{p.sku}</div>
+                      </div>
+                      <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(p.vendas_atual)}</span>
+                      <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{fmt(p.vendas_anterior)}</span>
+                      <span style={{ width: 50, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right", color: "var(--red)" }}>{p.diff}</span>
+                      <span style={{ width: 45, fontSize: 9, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: "var(--red)" }}>{p.pct.toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Sec icon="📂">Top Categorias</Sec>
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Categoria</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Vendas</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
+                    <span style={{ width: 45, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
+                    <span style={{ width: 85, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Receita</span>
+                  </div>
+                  {catCur.map((c, i) => {
+                    const prev = catPrevMap[c.categoria];
+                    const prevV = prev ? Number(prev.vendas) : 0;
+                    const diff = prevV > 0 ? ((Number(c.vendas) - prevV) / prevV * 100) : null;
+                    const mx = catCur[0]?.vendas || 1;
+                    return (
+                      <div key={i} style={{ padding: "5px 0", borderBottom: i < catCur.length - 1 ? "1px solid var(--border)11" : "none" }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 11, fontWeight: 500, textTransform: "capitalize" }}>{c.categoria}</span>
+                          </div>
+                          <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(c.vendas)}</span>
+                          <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevV > 0 ? fmt(prevV) : "–"}</span>
+                          <span style={{ width: 45, fontSize: 9, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: diff == null ? "var(--muted)" : diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%` : "–"}</span>
+                          <span style={{ width: 85, fontSize: 10, fontFamily: "var(--mono)", textAlign: "right", color: "var(--accent)" }}>{fmtR(c.receita)}</span>
+                        </div>
+                        <div style={{ height: 3, background: "var(--bg)", borderRadius: 2, marginTop: 3 }}>
+                          <div style={{ height: "100%", borderRadius: 2, width: `${(Number(c.vendas) / mx) * 100}%`, background: "var(--blue)", transition: "width .5s" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>);
+            })()}
+          </>)}
+
+          {/* ═══ PUBLICIDADE ═══ */}
           {tab === "publicidade" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
               {(() => {
@@ -352,11 +494,12 @@ export default function Home() {
                   <KPI label="Receita Ads" value={fmtR(t.receita)} color="var(--green)" />
                   <KPI label="ACOS" value={fmtP(acos)} sub="Custo / Receita" color="var(--accent)" />
                   <KPI label="ROAS" value={`${roas.toFixed(1)}x`} sub="Receita / Custo" color="var(--blue)" />
-                  <KPI label="Clicks" value={fmt(t.clicks)} sub={`${fmt(t.imp)} impress\u00f5es`} color="var(--purple)" />
+                  <KPI label="Clicks" value={fmt(t.clicks)} sub={`${fmt(t.imp)} impressões`} color="var(--purple)" />
                 </>);
               })()}
             </div>
-            <Sec icon="\ud83d\udcb0">Custo vs Receita Ads</Sec>
+
+            <Sec icon="💰">Custo vs Receita Ads</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={data.pub_dia || []}>
@@ -373,7 +516,8 @@ export default function Home() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <Sec icon="\ud83d\udcc8">ACOS / ROAS</Sec>
+
+            <Sec icon="📈">ACOS / ROAS</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={data.pub_dia || []}>
@@ -387,7 +531,8 @@ export default function Home() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <Sec icon="\ud83c\udfea">Por Conta</Sec>
+
+            <Sec icon="🏪">Por Conta</Sec>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((data.pub_conta || []).length || 1, 4)},1fr)`, gap: 10 }}>
               {(data.pub_conta || []).map((c) => {
                 const prev = (data.pub_conta_prev || []).find((p) => p.conta === c.conta) || {};
@@ -409,7 +554,7 @@ export default function Home() {
                     </div>
                     <div>
                       <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>ROAS</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)", display: "flex", alignItems: "center" }}>{c.roas ? `${c.roas}x` : "\u2013"}<Delta cur={c.roas} prev={prev.roas} /></div>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)", display: "flex", alignItems: "center" }}>{c.roas ? `${c.roas}x` : "–"}<Delta cur={c.roas} prev={prev.roas} /></div>
                     </div>
                   </div>
                 </div>
@@ -417,15 +562,18 @@ export default function Home() {
               })}
             </div>
           </>)}
+
+          {/* ═══ RECLAMAÇÕES ═══ */}
           {tab === "problemas" && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
-              <KPI label="Reclama\u00e7\u00f5es" value={fmt(k.reclamacoes)} sub={`${fmtP(k.pct_reclamacao)} das vendas`} color="var(--red)" />
+              <KPI label="Reclamações" value={fmt(k.reclamacoes)} sub={`${fmtP(k.pct_reclamacao)} das vendas`} color="var(--red)" />
               <KPI label="Cancelamentos" value={fmt(k.canceladas)} sub={`${fmtP(k.pct_cancelada)} das vendas`} color="var(--orange)" />
               <KPI label="Valor Devolvido" value={fmtR(k.valor_cancelamentos)} sub="cancelamentos" color="var(--red)" />
               <KPI label="Frete Recebido" value={fmtR(k.receita_frete)} color="var(--cyan)" />
               <KPI label="Vendas OK" value={fmt((k.total_vendas || 0) - (k.canceladas || 0))} color="var(--green)" />
             </div>
-            <Sec icon="\ud83d\udccb">Tipos de Reclama\u00e7\u00e3o</Sec>
+
+            <Sec icon="📋">Tipos de Reclamação</Sec>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
                 <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Tipo</span>
@@ -434,7 +582,7 @@ export default function Home() {
                 <span style={{ width: 85, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, textAlign: "right" }}>Devolvido</span>
               </div>
               {(data.reclamacoes || []).map((r, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: i < (data.reclamacoes || []).length - 1 ? "1px solid var(--border)22" : "none" }}>
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: i < (data.reclamacoes || []).length - 1 ? "1px solid var(--border)" + "22" : "none" }}>
                   <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 5, height: 5, borderRadius: "50%", background: r.reclamacao?.includes("opened") ? "var(--red)" : "var(--orange)", flexShrink: 0 }} />
                     <span style={{ fontSize: 11, fontWeight: 500 }}>{r.reclamacao}</span>
@@ -445,16 +593,17 @@ export default function Home() {
                 </div>
               ))}
               {(!data.reclamacoes || data.reclamacoes.length === 0) && (
-                <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Nenhuma reclama\u00e7\u00e3o no per\u00edodo \ud83c\udf89</div>
+                <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Nenhuma reclamação no período 🎉</div>
               )}
             </div>
-            <Sec icon="\ud83c\udfea">Por Conta</Sec>
+
+            <Sec icon="🏪">Por Conta</Sec>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((data.por_conta || []).length || 1, 4)},1fr)`, gap: 10 }}>
               {(data.por_conta || []).map((c) => (
                 <div key={c.conta} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, borderLeft: `3px solid ${ccHex(c.conta, dark)}` }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 7 }}>{CONTA_LABELS[c.conta] || c.conta}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                    {[{ l: "Reclama\u00e7\u00f5es", v: fmt(c.reclamacoes), cl: "var(--red)" }, { l: "% Vendas", v: c.vendas > 0 ? fmtP((c.reclamacoes / c.vendas) * 100) : "\u2013", cl: "var(--text)" }, { l: "Vendas", v: fmt(c.vendas), cl: "var(--muted)" }, { l: "Devolvido", v: fmtR(c.valor_cancelamentos), cl: "var(--red)" }].map((m, i) => (
+                    {[{ l: "Reclamações", v: fmt(c.reclamacoes), cl: "var(--red)" }, { l: "% Vendas", v: c.vendas > 0 ? fmtP((c.reclamacoes / c.vendas) * 100) : "–", cl: "var(--text)" }, { l: "Vendas", v: fmt(c.vendas), cl: "var(--muted)" }, { l: "Devolvido", v: fmtR(c.valor_cancelamentos), cl: "var(--red)" }].map((m, i) => (
                       <div key={i}>
                         <div style={{ fontSize: 7, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>{m.l}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "var(--mono)", color: m.cl }}>{m.v}</div>
@@ -465,9 +614,11 @@ export default function Home() {
               ))}
             </div>
           </>)}
+
         </>)}
+
         <div style={{ textAlign: "center", padding: "28px 0 14px", fontSize: 9, color: "var(--dim)" }}>
-          FullPro Dashboard \u2022 {dates.f} \u2192 {dates.t} \u2022 {contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}
+          FullPro Dashboard • {dates.f} → {dates.t} • {contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}
         </div>
       </div>
     </div>
