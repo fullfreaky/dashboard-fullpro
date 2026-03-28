@@ -103,7 +103,7 @@ export default function Home() {
   const [showDP, setShowDP] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [], top_produtos: [], top_produtos_prev: [], top_categorias: [], top_categorias_prev: [] });
+  const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [], top_produtos: [], top_produtos_prev: [], all_produtos_cur: [], top_categorias: [], top_categorias_prev: [] });
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
@@ -154,9 +154,10 @@ export default function Home() {
         { name: "vendas_dia_prev", sql: `SELECT venda_data::date as dia, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY dia ORDER BY dia` },
         { name: "kpis_prev", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw}` },
         { name: "top_produtos", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 30` },
-        { name: "top_produtos_prev", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY sku` },
-        { name: "top_categorias", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${f}' AND v.venda_data::date<='${t}' ${cw.replace(/conta/g,'v.conta')} AND v.sku IS NOT NULL GROUP BY c.nome ORDER BY vendas DESC LIMIT 15` },
-        { name: "top_categorias_prev", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${prevF}' AND v.venda_data::date<='${prevT}' ${cw.replace(/conta/g,'v.conta')} AND v.sku IS NOT NULL GROUP BY c.nome` },
+        { name: "top_produtos_prev", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 200` },
+        { name: "all_produtos_cur", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, count(*) as vendas FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku` },
+        { name: "top_categorias", sql: `SELECT * FROM top_categorias_proporcional('${f}','${t}','${contas.length < 4 ? contas.join(",") : ""}')` },
+        { name: "top_categorias_prev", sql: `SELECT * FROM top_categorias_proporcional('${prevF}','${prevT}','${contas.length < 4 ? contas.join(",") : ""}')` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
@@ -171,6 +172,7 @@ export default function Home() {
         pub_conta_prev: res.pub_conta_prev || [],
         top_produtos: res.top_produtos || [],
         top_produtos_prev: res.top_produtos_prev || [],
+        all_produtos_cur: res.all_produtos_cur || [],
         top_categorias: res.top_categorias || [],
         top_categorias_prev: res.top_categorias_prev || [],
       });
@@ -369,16 +371,18 @@ export default function Home() {
               const cur = data.top_produtos || [];
               const prevMap = {};
               (data.top_produtos_prev || []).forEach((p) => { prevMap[p.sku] = p; });
+              const curAllMap = {};
+              (data.all_produtos_cur || []).forEach((p) => { curAllMap[p.sku] = p; });
               // Top 30 mais vendidos
               const topVendidos = cur;
               // Produtos que mais perderam vendas (min 3 no anterior, excluir N/I)
               const perderam = Object.entries(prevMap)
                 .filter(([sku, p]) => sku !== "N/I" && Number(p.vendas) >= 3)
                 .map(([sku, p]) => {
-                  const c = cur.find((x) => x.sku === sku);
+                  const c = curAllMap[sku];
                   const curV = c ? Number(c.vendas) : 0;
                   const prevV = Number(p.vendas);
-                  return { sku, titulo: c?.titulo || sku, vendas_atual: curV, vendas_anterior: prevV, diff: curV - prevV, pct: prevV > 0 ? ((curV - prevV) / prevV * 100) : 0 };
+                  return { sku, titulo: p.titulo || sku, vendas_atual: curV, vendas_anterior: prevV, diff: curV - prevV, pct: prevV > 0 ? ((curV - prevV) / prevV * 100) : 0 };
                 })
                 .filter((x) => x.diff < 0)
                 .sort((a, b) => a.diff - b.diff)
@@ -446,33 +450,34 @@ export default function Home() {
                   ))}
                 </div>
 
-                <Sec icon="📂">Top Categorias</Sec>
+                <Sec icon="📂">Top Categorias (com decomposição de kits)</Sec>
                 <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                   <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Categoria</span>
-                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Vendas</span>
+                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Unids</span>
                     <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
                     <span style={{ width: 45, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
                     <span style={{ width: 85, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Receita</span>
                   </div>
                   {catCur.map((c, i) => {
                     const prev = catPrevMap[c.categoria];
-                    const prevV = prev ? Number(prev.vendas) : 0;
-                    const diff = prevV > 0 ? ((Number(c.vendas) - prevV) / prevV * 100) : null;
-                    const mx = catCur[0]?.vendas || 1;
+                    const curU = Number(c.unidades) || Number(c.vendas);
+                    const prevU = prev ? (Number(prev.unidades) || Number(prev.vendas)) : 0;
+                    const diff = prevU > 0 ? ((curU - prevU) / prevU * 100) : null;
+                    const mx = Number(catCur[0]?.unidades) || Number(catCur[0]?.vendas) || 1;
                     return (
                       <div key={i} style={{ padding: "5px 0", borderBottom: i < catCur.length - 1 ? "1px solid var(--border)11" : "none" }}>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <div style={{ flex: 1 }}>
                             <span style={{ fontSize: 11, fontWeight: 500, textTransform: "capitalize" }}>{c.categoria}</span>
                           </div>
-                          <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(c.vendas)}</span>
-                          <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevV > 0 ? fmt(prevV) : "–"}</span>
+                          <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(curU)}</span>
+                          <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevU > 0 ? fmt(prevU) : "–"}</span>
                           <span style={{ width: 45, fontSize: 9, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: diff == null ? "var(--muted)" : diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%` : "–"}</span>
                           <span style={{ width: 85, fontSize: 10, fontFamily: "var(--mono)", textAlign: "right", color: "var(--accent)" }}>{fmtR(c.receita)}</span>
                         </div>
                         <div style={{ height: 3, background: "var(--bg)", borderRadius: 2, marginTop: 3 }}>
-                          <div style={{ height: "100%", borderRadius: 2, width: `${(Number(c.vendas) / mx) * 100}%`, background: "var(--blue)", transition: "width .5s" }} />
+                          <div style={{ height: "100%", borderRadius: 2, width: `${(curU / mx) * 100}%`, background: "var(--blue)", transition: "width .5s" }} />
                         </div>
                       </div>
                     );
