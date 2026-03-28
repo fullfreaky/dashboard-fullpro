@@ -100,7 +100,7 @@ export default function Home() {
   const [showDP, setShowDP] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [] });
+  const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [], top_produtos: [], top_produtos_prev: [], top_categorias: [], top_categorias_prev: [] });
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
@@ -149,6 +149,10 @@ export default function Home() {
         { name: "pub_conta_prev", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks FROM ml_publicidade_diario WHERE data>='${prevF}' AND data<='${prevT}' ${cw2} GROUP BY conta` },
         { name: "vendas_dia_prev", sql: `SELECT venda_data::date as dia, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY dia ORDER BY dia` },
         { name: "kpis_prev", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw}` },
+        { name: "top_produtos", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 30` },
+        { name: "top_produtos_prev", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY sku` },
+        { name: "top_categorias", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${f}' AND v.venda_data::date<='${t}' AND v.sku IS NOT NULL GROUP BY c.nome ORDER BY vendas DESC LIMIT 15` },
+        { name: "top_categorias_prev", sql: `SELECT c.nome as categoria, count(*) as vendas, round(sum(v.receita_produtos)::numeric) as receita FROM ml_vendas v JOIN (SELECT DISTINCT sku, categoria_id FROM nfe_items WHERE sku IS NOT NULL AND sku != '') ni ON ni.sku = v.sku JOIN categorias c ON c.id = ni.categoria_id WHERE v.venda_data::date>='${prevF}' AND v.venda_data::date<='${prevT}' AND v.sku IS NOT NULL GROUP BY c.nome` },
       ]);
       setData({
         kpis: (res.kpis || [])[0] || {},
@@ -161,6 +165,10 @@ export default function Home() {
         pub_dia: res.pub_dia || [],
         pub_conta: res.pub_conta || [],
         pub_conta_prev: res.pub_conta_prev || [],
+        top_produtos: res.top_produtos || [],
+        top_produtos_prev: res.top_produtos_prev || [],
+        top_categorias: res.top_categorias || [],
+        top_categorias_prev: res.top_categorias_prev || [],
       });
     } catch (e) { console.error(e); setErr(e.message); }
     setLoading(false);
@@ -208,7 +216,7 @@ export default function Home() {
       </div>
       <div style={{ padding: "18px 22px", maxWidth: 1400, margin: "0 auto" }}>
         <div style={{ display: "flex", gap: 2, marginBottom: 18, background: "var(--card)", padding: 3, borderRadius: 8, width: "fit-content", border: "1px solid var(--border)" }}>
-          {[{ id: "vendas", l: "Vendas", i: "\ud83d\udce6" }, { id: "publicidade", l: "Publicidade", i: "\ud83d\udce2" }, { id: "problemas", l: "Reclama\u00e7\u00f5es", i: "\u26a0\ufe0f" }].map((t) => (
+          {[{ id: "vendas", l: "Vendas", i: "\ud83d\udce6" }, { id: "produtos", l: "Produtos", i: "🎯" }, { id: "publicidade", l: "Publicidade", i: "\ud83d\udce2" }, { id: "problemas", l: "Reclama\u00e7\u00f5es", i: "\u26a0\ufe0f" }].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#000" : "var(--muted)", cursor: "pointer", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
               <span style={{ fontSize: 12 }}>{t.i}</span>{t.l}
             </button>
