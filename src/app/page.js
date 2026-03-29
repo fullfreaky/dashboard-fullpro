@@ -105,6 +105,10 @@ export default function Home() {
   const [err, setErr] = useState(null);
   const [data, setData] = useState({ kpis: {}, kpis_prev: {}, vendas_dia: [], vendas_dia_prev: [], por_conta: [], top_estados: [], reclamacoes: [], pub_dia: [], pub_conta: [], pub_conta_prev: [], top_produtos: [], top_produtos_prev: [], all_produtos_cur: [], top_categorias: [], top_categorias_prev: [] });
 
+  /* ── produtos state ── */
+  const [prodFilter, setProdFilter] = useState("");
+  const [prodShow, setProdShow] = useState(20);
+
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
   const toggleConta = (c) => {
@@ -127,6 +131,9 @@ export default function Home() {
     return `AND conta IN (${contas.map((c) => `'${c}'`).join(",")})`;
   }, [contas]);
 
+  /* reset produtos pagination on filter/period change */
+  useEffect(() => { setProdShow(20); setProdFilter(""); }, [preset, dateFrom, dateTo, contas]);
+
   const selectPreset = (p) => { setPreset(p); setDateFrom(""); setDateTo(""); setShowDP(false); };
   const applyDates = () => { if (dateFrom && dateTo) { setPreset("custom"); setShowDP(false); } };
 
@@ -135,7 +142,6 @@ export default function Home() {
     const { f, t } = dates;
     const cw = contaW;
     const cw2 = contas.length < 4 ? `AND conta IN (${contas.map((c) => `'${c}'`).join(",")})` : "";
-    // Calculate previous period dates for comparison
     const df = new Date(f + "T12:00:00"); const dt = new Date(t + "T12:00:00");
     const span = Math.round((dt - df) / 86400000);
     const pf = new Date(df); pf.setDate(pf.getDate() - span - 1);
@@ -153,7 +159,7 @@ export default function Home() {
         { name: "pub_conta_prev", sql: `SELECT conta, round(sum(custo)::numeric) as custo, round(sum(total_amount)::numeric) as receita_ads, round((sum(custo)/nullif(sum(total_amount),0)*100)::numeric,1) as acos, round((sum(total_amount)/nullif(sum(custo),0))::numeric,1) as roas, sum(clicks) as clicks FROM ml_publicidade_diario WHERE data>='${prevF}' AND data<='${prevT}' ${cw2} GROUP BY conta` },
         { name: "vendas_dia_prev", sql: `SELECT venda_data::date as dia, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY dia ORDER BY dia` },
         { name: "kpis_prev", sql: `SELECT count(*) as total_vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw}` },
-        { name: "top_produtos", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 30` },
+        { name: "top_produtos", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita, round(avg(receita_produtos)::numeric) as ticket_medio, count(*) filter (where is_publicidade) as via_ads FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku ORDER BY receita DESC` },
         { name: "top_produtos_prev", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, min(titulo) as titulo, count(*) as vendas, round(sum(receita_produtos)::numeric) as receita FROM ml_vendas WHERE venda_data::date>='${prevF}' AND venda_data::date<='${prevT}' ${cw} GROUP BY sku ORDER BY vendas DESC LIMIT 200` },
         { name: "all_produtos_cur", sql: `SELECT coalesce(nullif(sku,''),'N/I') as sku, count(*) as vendas FROM ml_vendas WHERE venda_data::date>='${f}' AND venda_data::date<='${t}' ${cw} GROUP BY sku` },
         { name: "top_categorias", sql: `SELECT * FROM top_categorias_proporcional('${f}','${t}','${contas.length < 4 ? contas.join(",") : ""}')` },
@@ -368,13 +374,20 @@ export default function Home() {
           {/* ═══ PRODUTOS ═══ */}
           {tab === "produtos" && (<>
             {(() => {
-              const cur = data.top_produtos || [];
+              const allProd = data.top_produtos || [];
               const prevMap = {};
               (data.top_produtos_prev || []).forEach((p) => { prevMap[p.sku] = p; });
               const curAllMap = {};
               (data.all_produtos_cur || []).forEach((p) => { curAllMap[p.sku] = p; });
-              // Top 30 mais vendidos
-              const topVendidos = cur;
+
+              // Filter products by search term (sku or titulo)
+              const filterLow = prodFilter.toLowerCase().trim();
+              const filtered = filterLow
+                ? allProd.filter((p) => (p.sku || "").toLowerCase().includes(filterLow) || (p.titulo || "").toLowerCase().includes(filterLow))
+                : allProd;
+              const visible = filtered.slice(0, prodShow);
+              const hasMore = filtered.length > prodShow;
+
               // Produtos que mais perderam vendas (min 3 no anterior, excluir N/I)
               const perderam = Object.entries(prevMap)
                 .filter(([sku, p]) => sku !== "N/I" && Number(p.vendas) >= 3)
@@ -392,36 +405,83 @@ export default function Home() {
               const catPrevMap = {};
               (data.top_categorias_prev || []).forEach((c) => { catPrevMap[c.categoria] = c; });
               return (<>
-                <Sec icon="🏆">Top 30 Produtos - Período Atual</Sec>
-                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, overflowX: "auto" }}>
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8, padding: "0 0 7px", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ width: 22, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>#</span>
-                    <span style={{ flex: 1, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Produto</span>
-                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Vendas</span>
-                    <span style={{ width: 55, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
-                    <span style={{ width: 45, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
-                    <span style={{ width: 75, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Receita</span>
-                    <span style={{ width: 35, fontSize: 8, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Ads</span>
+                <Sec icon="🏆">Top Produtos</Sec>
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 20px", overflowX: "auto" }}>
+                  {/* Search filter */}
+                  <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ position: "relative", flex: 1, maxWidth: 380 }}>
+                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--dim)", pointerEvents: "none" }}>🔍</span>
+                      <input
+                        type="text"
+                        value={prodFilter}
+                        onChange={(e) => { setProdFilter(e.target.value); setProdShow(20); }}
+                        placeholder="Filtrar por SKU ou título..."
+                        style={{
+                          width: "100%", padding: "8px 12px 8px 34px", fontSize: 13,
+                          background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
+                          borderRadius: 8, outline: "none", fontFamily: "var(--font)",
+                          transition: "border-color .15s",
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
+                        onBlur={(e) => e.target.style.borderColor = "var(--border)"}
+                      />
+                    </div>
+                    <span style={{ fontSize: 11, color: "var(--dim)", whiteSpace: "nowrap" }}>
+                      {filtered.length} produto{filtered.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
-                  {topVendidos.map((p, i) => {
+                  {/* Table header */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, padding: "0 0 8px", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ width: 28, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>#</span>
+                    <span style={{ flex: 1, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Produto</span>
+                    <span style={{ width: 65, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Vendas</span>
+                    <span style={{ width: 65, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Anterior</span>
+                    <span style={{ width: 55, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Var %</span>
+                    <span style={{ width: 90, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Receita</span>
+                    <span style={{ width: 45, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Ads</span>
+                  </div>
+                  {/* Table rows */}
+                  {visible.length === 0 && (
+                    <div style={{ textAlign: "center", padding: 28, color: "var(--muted)", fontSize: 13 }}>
+                      {prodFilter ? "Nenhum produto encontrado" : "Sem dados no período"}
+                    </div>
+                  )}
+                  {visible.map((p, i) => {
                     const prev = prevMap[p.sku];
                     const prevV = prev ? Number(prev.vendas) : 0;
                     const diff = prevV > 0 ? ((Number(p.vendas) - prevV) / prevV * 100) : null;
                     return (
-                      <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: i < topVendidos.length - 1 ? "1px solid var(--border)11" : "none" }}>
-                        <span style={{ width: 22, fontSize: 9, color: "var(--dim)", fontFamily: "var(--mono)", fontWeight: 600 }}>{i + 1}</span>
+                      <div key={p.sku + i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: i < visible.length - 1 ? "1px solid var(--border)11" : "none" }}>
+                        <span style={{ width: 28, fontSize: 11, color: "var(--dim)", fontFamily: "var(--mono)", fontWeight: 600 }}>{i + 1}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 10, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</div>
-                          <div style={{ fontSize: 7, color: "var(--dim)", fontFamily: "var(--mono)" }}>{p.sku}</div>
+                          <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}>{p.titulo}</div>
+                          <div style={{ fontSize: 9, color: "var(--dim)", fontFamily: "var(--mono)", marginTop: 1 }}>{p.sku}</div>
                         </div>
-                        <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(p.vendas)}</span>
-                        <span style={{ width: 55, fontSize: 10, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevV > 0 ? fmt(prevV) : "–"}</span>
-                        <span style={{ width: 45, fontSize: 9, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: diff == null ? "var(--muted)" : diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%` : "–"}</span>
-                        <span style={{ width: 75, fontSize: 10, fontFamily: "var(--mono)", textAlign: "right", color: "var(--accent)" }}>{fmtR(p.receita)}</span>
-                        <span style={{ width: 35, fontSize: 9, fontFamily: "var(--mono)", textAlign: "right", color: Number(p.via_ads) > 0 ? "var(--purple)" : "var(--dim)" }}>{fmt(p.via_ads)}</span>
+                        <span style={{ width: 65, fontSize: 13, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(p.vendas)}</span>
+                        <span style={{ width: 65, fontSize: 12, fontFamily: "var(--mono)", color: "var(--muted)", textAlign: "right" }}>{prevV > 0 ? fmt(prevV) : "–"}</span>
+                        <span style={{ width: 55, fontSize: 11, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: diff == null ? "var(--muted)" : diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%` : "–"}</span>
+                        <span style={{ width: 90, fontSize: 13, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: "var(--accent)" }}>{fmtR(p.receita)}</span>
+                        <span style={{ width: 45, fontSize: 11, fontFamily: "var(--mono)", textAlign: "right", color: Number(p.via_ads) > 0 ? "var(--purple)" : "var(--dim)" }}>{fmt(p.via_ads)}</span>
                       </div>
                     );
                   })}
+                  {/* Load more */}
+                  {hasMore && (
+                    <div style={{ textAlign: "center", paddingTop: 14 }}>
+                      <button
+                        onClick={() => setProdShow((s) => s + 20)}
+                        style={{
+                          padding: "8px 28px", fontSize: 12, fontWeight: 600,
+                          background: "var(--bg)", color: "var(--muted)", border: "1px solid var(--border)",
+                          borderRadius: 8, cursor: "pointer", transition: "all .15s",
+                        }}
+                        onMouseEnter={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.color = "var(--accent)"; }}
+                        onMouseLeave={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.color = "var(--muted)"; }}
+                      >
+                        Carregar mais ({filtered.length - prodShow} restantes)
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <Sec icon="📉">Produtos que Mais Perderam Vendas</Sec>
