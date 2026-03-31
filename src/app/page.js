@@ -872,12 +872,15 @@ export default function Home() {
                         const estoqueIniMap = {};
                         estoqueIni.forEach((e) => { estoqueIniMap[normD(e.mes)] = Number(e.estoque_inicio); });
                         // Valid months: estoque no dia 1 >= media bruta
-                        // Check all months in the period, not just months with sales
+                        // If a month has no stock data, carry forward the last known value
                         let mesesValidos = 0;
+                        let lastKnown = null;
                         for (let m = new Date(startDate); m <= now; m.setMonth(m.getMonth() + 1)) {
                           const mk = m.toISOString().split("T")[0].substring(0, 8) + "01";
                           const est = estoqueIniMap[mk];
-                          if (est != null && est >= mediaBruta) mesesValidos++;
+                          if (est != null) lastKnown = est;
+                          const estVal = est != null ? est : lastKnown;
+                          if (estVal != null && estVal >= mediaBruta) mesesValidos++;
                         }
                         const mesesSemEstoque = totalMeses - mesesValidos;
                         const mediaReal = mesesValidos > 0 ? totalUn / mesesValidos : 0;
