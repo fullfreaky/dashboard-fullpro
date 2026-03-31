@@ -895,22 +895,25 @@ export default function Home() {
               {gestaoData.vendas_mes.length > 0 && (<>
                 {(() => {
                   const mLabel = (m) => { const d = new Date(m + "T12:00:00"); const ml = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return `${ml[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`; };
+                  const normDate = (d) => typeof d === "string" ? d.substring(0, 10) : d; // normalize "2025-04-01T00:00:00" → "2025-04-01"
                   // Merge vendas + estoque by month
                   const estoqueMap = {};
-                  (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[e.mes] = Number(e.estoque); });
+                  (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[normDate(e.mes)] = Number(e.estoque); });
                   // Build detail maps (CPF/CNPJ) from post-nov data
                   const detMap = {}; // { mes: { cpf_un, cnpj_un, cpf_fat, cnpj_fat } }
                   (gestaoData.vendas_detalhe || []).forEach((d) => {
-                    if (!detMap[d.mes]) detMap[d.mes] = { cpf_un: 0, cnpj_un: 0, cpf_fat: 0, cnpj_fat: 0 };
-                    if (d.tipo === "CPF") { detMap[d.mes].cpf_un += Number(d.unidades) || 0; detMap[d.mes].cpf_fat += Number(d.faturamento) || 0; }
-                    else { detMap[d.mes].cnpj_un += Number(d.unidades) || 0; detMap[d.mes].cnpj_fat += Number(d.faturamento) || 0; }
+                    const k = normDate(d.mes);
+                    if (!detMap[k]) detMap[k] = { cpf_un: 0, cnpj_un: 0, cpf_fat: 0, cnpj_fat: 0 };
+                    if (d.tipo === "CPF") { detMap[k].cpf_un += Number(d.unidades) || 0; detMap[k].cpf_fat += Number(d.faturamento) || 0; }
+                    else { detMap[k].cnpj_un += Number(d.unidades) || 0; detMap[k].cnpj_fat += Number(d.faturamento) || 0; }
                   });
                   const merged = gestaoData.vendas_mes.map((v) => {
-                    const det = detMap[v.mes];
-                    const estq = estoqueMap[v.mes];
+                    const mk = normDate(v.mes);
+                    const det = detMap[mk];
+                    const estq = estoqueMap[mk];
                     const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
                     return {
-                      mes: v.mes, mesLabel: mLabel(v.mes),
+                      mes: mk, mesLabel: mLabel(mk),
                       unidades: Number(v.unidades) || 0,
                       faturamento: Number(v.faturamento) || 0,
                       estoque: estq != null ? estq : null,
@@ -922,10 +925,11 @@ export default function Home() {
                   });
                   // Add months that only have estoque but no sales
                   (gestaoData.estoque_mes || []).forEach((e) => {
-                    if (!merged.find((m) => m.mes === e.mes)) {
+                    const mk = normDate(e.mes);
+                    if (!merged.find((m) => m.mes === mk)) {
                       const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
                       const estq = Number(e.estoque);
-                      merged.push({ mes: e.mes, mesLabel: mLabel(e.mes), unidades: 0, faturamento: 0, estoque: estq, custo_estoque: precoAtual > 0 ? Math.round(estq * precoAtual) : null, cpf_un: null, cnpj_un: null, cpf_fat: null, cnpj_fat: null });
+                      merged.push({ mes: mk, mesLabel: mLabel(mk), unidades: 0, faturamento: 0, estoque: estq, custo_estoque: precoAtual > 0 ? Math.round(estq * precoAtual) : null, cpf_un: null, cnpj_un: null, cpf_fat: null, cnpj_fat: null });
                     }
                   });
                   merged.sort((a, b) => a.mes.localeCompare(b.mes));
@@ -998,7 +1002,24 @@ export default function Home() {
                               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                               <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
                               <YAxis stroke="var(--dim)" fontSize={9} />
-                              <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
+                              <Tooltip content={({ active, payload, label }) => {
+                                if (!active || !payload?.length) return null;
+                                const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
+                                return (
+                                  <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 11px", fontSize: 10, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>
+                                    <div style={{ color: "var(--muted)", marginBottom: 4, fontWeight: 700 }}>{label}</div>
+                                    <div style={{ fontWeight: 700, fontFamily: "var(--mono)", marginBottom: 4, fontSize: 12, color: "var(--text)" }}>Total: {fmt(total)}</div>
+                                    {payload.map((p, i) => (
+                                      <div key={i} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 1 }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.fill, flexShrink: 0 }} />
+                                        <span style={{ color: "var(--muted)" }}>{p.name}:</span>
+                                        <span style={{ fontWeight: 700, fontFamily: "var(--mono)" }}>{fmt(p.value)}</span>
+                                        <span style={{ color: "var(--dim)", fontSize: 9 }}>({total > 0 ? ((p.value / total) * 100).toFixed(0) : 0}%)</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }} />
                               <Bar dataKey="cpf_un" name="CPF" stackId="a" fill={dark ? "#3B82F6" : "#2563EB"} radius={[0, 0, 0, 0]} />
                               <Bar dataKey="cnpj_un" name="CNPJ" stackId="a" fill={dark ? "#F97316" : "#EA580C"} radius={[3, 3, 0, 0]} />
                             </BarChart>
@@ -1018,7 +1039,24 @@ export default function Home() {
                               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                               <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
                               <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
-                              <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                              <Tooltip content={({ active, payload, label }) => {
+                                if (!active || !payload?.length) return null;
+                                const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
+                                return (
+                                  <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 11px", fontSize: 10, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>
+                                    <div style={{ color: "var(--muted)", marginBottom: 4, fontWeight: 700 }}>{label}</div>
+                                    <div style={{ fontWeight: 700, fontFamily: "var(--mono)", marginBottom: 4, fontSize: 12, color: "var(--text)" }}>Total: {fmtR(total)}</div>
+                                    {payload.map((p, i) => (
+                                      <div key={i} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 1 }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.fill, flexShrink: 0 }} />
+                                        <span style={{ color: "var(--muted)" }}>{p.name}:</span>
+                                        <span style={{ fontWeight: 700, fontFamily: "var(--mono)" }}>{fmtR(p.value)}</span>
+                                        <span style={{ color: "var(--dim)", fontSize: 9 }}>({total > 0 ? ((p.value / total) * 100).toFixed(0) : 0}%)</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }} />
                               <Bar dataKey="cpf_fat" name="CPF" stackId="a" fill={dark ? "#22C55E" : "#16A34A"} radius={[0, 0, 0, 0]} />
                               <Bar dataKey="cnpj_fat" name="CNPJ" stackId="a" fill={dark ? "#A855F7" : "#7C3AED"} radius={[3, 3, 0, 0]} />
                             </BarChart>
