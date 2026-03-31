@@ -862,16 +862,23 @@ export default function Home() {
                         const normD = (d) => typeof d === "string" ? d.substring(0, 10) : d;
                         const totalUn = vendas.reduce((s, v) => s + (Number(v.unidades) || 0), 0);
                         const totalFat = vendas.reduce((s, v) => s + (Number(v.faturamento) || 0), 0);
-                        const totalMeses = vendas.length;
+                        // Calculate total months from selected period
+                        const { f: gf } = gestaoDateRange;
+                        const startDate = new Date(gf + "T12:00:00");
+                        const now = new Date();
+                        const totalMeses = Math.max(1, (now.getFullYear() - startDate.getFullYear()) * 12 + now.getMonth() - startDate.getMonth() + 1);
                         const mediaBruta = totalMeses > 0 ? totalUn / totalMeses : 0;
                         // Build estoque inicio map
                         const estoqueIniMap = {};
                         estoqueIni.forEach((e) => { estoqueIniMap[normD(e.mes)] = Number(e.estoque_inicio); });
                         // Valid months: estoque no dia 1 >= media bruta
-                        const mesesValidos = vendas.filter((v) => {
-                          const est = estoqueIniMap[normD(v.mes)];
-                          return est != null && est >= mediaBruta;
-                        }).length;
+                        // Check all months in the period, not just months with sales
+                        let mesesValidos = 0;
+                        for (let m = new Date(startDate); m <= now; m.setMonth(m.getMonth() + 1)) {
+                          const mk = m.toISOString().split("T")[0].substring(0, 8) + "01";
+                          const est = estoqueIniMap[mk];
+                          if (est != null && est >= mediaBruta) mesesValidos++;
+                        }
                         const mesesSemEstoque = totalMeses - mesesValidos;
                         const mediaReal = mesesValidos > 0 ? totalUn / mesesValidos : 0;
                         return (
@@ -896,16 +903,11 @@ export default function Home() {
                                 </div>
                               </div>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
                               <div>
                                 <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Vendas Período</div>
                                 <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--blue)" }}>{fmt(totalUn)}</div>
                                 <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{fmtR(totalFat)} faturado</div>
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Média Bruta/Mês</div>
-                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--muted)" }}>{mediaBruta > 0 ? mediaBruta.toFixed(1) : "–"}</div>
-                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{totalMeses} meses</div>
                               </div>
                               <div>
                                 <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Meses s/ Estoque</div>
@@ -915,7 +917,7 @@ export default function Home() {
                               <div>
                                 <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Média Real/Mês</div>
                                 <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--accent)" }}>{mediaReal > 0 ? mediaReal.toFixed(1) : "–"}</div>
-                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{mesesValidos} meses válidos</div>
+                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{mesesValidos} de {totalMeses} meses válidos</div>
                               </div>
                             </div>
                           </>
