@@ -72,7 +72,7 @@ function ChartTT({ active, payload, label, formatter }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 11px", fontSize: 10, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>
       <div style={{ color: "var(--muted)", marginBottom: 3, fontWeight: 700 }}>{label}</div>
-      {payload.filter((p) => p.value > 0).map((p, i) => (
+      {payload.filter((p) => p.value != null).map((p, i) => (
         <div key={i} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 1 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color || p.fill, flexShrink: 0 }} />
           <span style={{ color: "var(--muted)" }}>{p.name}:</span>
@@ -958,8 +958,8 @@ export default function Home() {
                           <ComposedChart data={merged}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} />
-                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} />}
+                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} domain={[0, "auto"]} />
+                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} domain={[0, "auto"]} />}
                             <Tooltip content={<ChartTT formatter={(v, n) => `${fmt(v)} un`} />} />
                             <Bar yAxisId="l" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
                             {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
@@ -979,8 +979,8 @@ export default function Home() {
                           <ComposedChart data={merged.filter((m) => m.mes >= "2025-11-01")}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
-                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#EF4444" : "#DC2626"} fontSize={9} tickFormatter={(v) => fmtR(v)} />}
+                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "auto"]} />
+                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#EF4444" : "#DC2626"} fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "auto"]} />}
                             <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
                             <Bar yAxisId="l" dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
                             {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3, fill: dark ? "#EF4444" : "#DC2626" }} strokeWidth={2.5} connectNulls />}
