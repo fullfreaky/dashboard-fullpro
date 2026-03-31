@@ -175,9 +175,11 @@ export default function Home() {
     })();
   }, []);
 
+  const loadGestaoRef = { current: 0 };
   const loadGestao = useCallback(async (mode, value) => {
     if (!value) return;
-    setGestaoLoading(true); setGestaoData(null);
+    const reqId = ++loadGestaoRef.current;
+    setGestaoLoading(true);
     const { f, t } = gestaoDateRange;
     try {
       let queries;
@@ -200,6 +202,7 @@ export default function Home() {
         ];
       }
       const res = await fetchDashboard(queries);
+      if (reqId !== loadGestaoRef.current) return; // stale request
       setGestaoData({
         resumo: (res.resumo || [])[0] || null,
         vendas_mes: res.vendas_mes || [],
@@ -208,14 +211,15 @@ export default function Home() {
         top_skus: res.top_skus || [],
       });
     } catch (e) { console.error("gestao load error", e); }
-    setGestaoLoading(false);
+    if (reqId === loadGestaoRef.current) setGestaoLoading(false);
   }, [gestaoDateRange]);
 
   // Reload gestao when period changes (if there's already a selection)
+  const prevPeriodo = useMemo(() => gestaoPeriodo, [gestaoPeriodo]);
   useEffect(() => {
     if (gestaoMode === "sku" && gestaoSku) loadGestao("sku", gestaoSku);
     else if (gestaoMode === "categoria" && gestaoCatId) loadGestao("categoria", gestaoCatId);
-  }, [gestaoPeriodo]);
+  }, [gestaoDateRange]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
