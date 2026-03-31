@@ -1,4 +1,4 @@
-"use client";
+  "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -95,6 +95,7 @@ function Loader() {
 /* ══ MAIN ══ */
 export default function Home() {
   const [dark, setDark] = useState(true);
+  const [section, setSection] = useState("ml"); // "ml" or "gestao"
   const [tab, setTab] = useState("vendas");
   const [contas, setContas] = useState([...CONTAS_ALL]);
   const [preset, setPreset] = useState("30d");
@@ -108,6 +109,16 @@ export default function Home() {
   /* ── produtos state ── */
   const [prodFilter, setProdFilter] = useState("");
   const [prodShow, setProdShow] = useState(20);
+
+  /* ── gestão state ── */
+  const [gestaoMode, setGestaoMode] = useState("sku"); // "sku" or "categoria"
+  const [gestaoSku, setGestaoSku] = useState("");
+  const [gestaoCatId, setGestaoCatId] = useState("");
+  const [gestaoPeriodo, setGestaoPeriodo] = useState("12m"); // "12m", "24m", "ano"
+  const [gestaoData, setGestaoData] = useState(null);
+  const [gestaoLoading, setGestaoLoading] = useState(false);
+  const [gestaoCategorias, setGestaoCategorias] = useState([]);
+  const [gestaoSkuInput, setGestaoSkuInput] = useState("");
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
@@ -136,6 +147,71 @@ export default function Home() {
 
   const selectPreset = (p) => { setPreset(p); setDateFrom(""); setDateTo(""); setShowDP(false); };
   const applyDates = () => { if (dateFrom && dateTo) { setPreset("custom"); setShowDP(false); } };
+
+  /* ── gestão helpers ── */
+  const gestaoDateRange = useMemo(() => {
+    const now = new Date();
+    let from;
+    if (gestaoPeriodo === "24m") {
+      from = new Date(now.getFullYear() - 2, now.getMonth(), 1);
+    } else if (gestaoPeriodo === "ano") {
+      from = new Date(now.getFullYear(), 0, 1);
+    } else {
+      from = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    }
+    return { f: ds(from), t: ds(now) };
+  }, [gestaoPeriodo]);
+
+  // Load categories list once
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetchDashboard([
+          { name: "cats", sql: `SELECT DISTINCT c.id, c.nome FROM categorias c JOIN nfe_items ni ON ni.categoria_id = c.id WHERE ni.considerar = true ORDER BY c.nome` },
+        ]);
+        setGestaoCategorias(res.cats || []);
+      } catch (e) { console.error("cats load error", e); }
+    })();
+  }, []);
+
+  const loadGestao = useCallback(async (mode, value) => {
+    if (!value) return;
+    setGestaoLoading(true); setGestaoData(null);
+    const { f, t } = gestaoDateRange;
+    try {
+      let queries;
+      if (mode === "sku") {
+        const skuSafe = value.replace(/'/g, "''");
+        queries = [
+          { name: "resumo", sql: `SELECT ea.sku, ea.quantidade as estoque, ea.preco, ea.precocusto, ni.descricao FROM estoque_atual ea LEFT JOIN (SELECT DISTINCT ON (sku) sku, descricao FROM nfe_items WHERE considerar = true ORDER BY sku, data_emissao DESC) ni ON ni.sku = ea.sku WHERE ea.sku = '${skuSafe}'` },
+          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento, round((sum(ni.valor_total)/nullif(sum(ni.quantidade),0))::numeric,2) as preco_medio FROM nfe_items ni WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "estoque_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data DESC` },
+        ];
+      } else {
+        const catId = Number(value);
+        queries = [
+          { name: "resumo", sql: `SELECT c.nome as categoria, count(DISTINCT ni.sku) as total_skus, round(sum(ea.quantidade)::numeric) as estoque_total FROM categorias c JOIN nfe_items ni ON ni.categoria_id = c.id AND ni.considerar = true LEFT JOIN estoque_atual ea ON ea.sku = ni.sku WHERE c.id = ${catId} GROUP BY c.nome` },
+          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento, round((sum(ni.valor_total)/nullif(sum(ni.quantidade),0))::numeric,2) as preco_medio FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "estoque_mes", sql: `WITH cat_skus AS (SELECT DISTINCT sku FROM nfe_items WHERE considerar = true AND categoria_id = ${catId}), monthly AS (SELECT DISTINCT ON (eh.sku, date_trunc('month', eh.data)) eh.sku, date_trunc('month', eh.data)::date as mes, eh.quantidade FROM estoque_historico eh JOIN cat_skus cs ON eh.sku = cs.sku WHERE eh.data >= '${f}' ORDER BY eh.sku, date_trunc('month', eh.data), eh.data DESC) SELECT mes, sum(quantidade) as estoque FROM monthly GROUP BY mes ORDER BY mes` },
+          { name: "top_skus", sql: `SELECT ni.sku, min(ni.descricao) as descricao, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY ni.sku ORDER BY faturamento DESC LIMIT 15` },
+        ];
+      }
+      const res = await fetchDashboard(queries);
+      setGestaoData({
+        resumo: (res.resumo || [])[0] || null,
+        vendas_mes: res.vendas_mes || [],
+        estoque_mes: res.estoque_mes || [],
+        top_skus: res.top_skus || [],
+      });
+    } catch (e) { console.error("gestao load error", e); }
+    setGestaoLoading(false);
+  }, [gestaoDateRange]);
+
+  // Reload gestao when period changes (if there's already a selection)
+  useEffect(() => {
+    if (gestaoMode === "sku" && gestaoSku) loadGestao("sku", gestaoSku);
+    else if (gestaoMode === "categoria" && gestaoCatId) loadGestao("categoria", gestaoCatId);
+  }, [gestaoPeriodo]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -195,25 +271,36 @@ export default function Home() {
 
       {/* ═══ HEADER ═══ */}
       <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border)", background: "var(--card)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div style={{ fontSize: 8, color: "var(--accent)", fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase" }}>FullPro</div>
-          <h1 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Dashboard ML</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 8, color: "var(--accent)", fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase" }}>FullPro</div>
+            <h1 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Dashboard</h1>
+          </div>
+          <div style={{ display: "flex", gap: 2, background: "var(--bg)", padding: 3, borderRadius: 7 }}>
+            {[{ id: "ml", l: "Mercado Livre", i: "🛒" }, { id: "gestao", l: "Gestão", i: "📊" }].map((s) => (
+              <button key={s.id} onClick={() => setSection(s.id)} style={{ padding: "5px 14px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 5, cursor: "pointer", background: section === s.id ? "var(--accent)" : "transparent", color: section === s.id ? "#000" : "var(--muted)", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
+                <span style={{ fontSize: 12 }}>{s.i}</span>{s.l}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 2, background: "var(--bg)", padding: 2, borderRadius: 6 }}>
-            {["7d", "30d", "90d", "12m", "all"].map((p) => (
-              <MTab key={p} on={preset === p} onClick={() => selectPreset(p)}>{p === "all" ? "Tudo" : p}</MTab>
-            ))}
-            <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>📅</MTab>
-          </div>
+          {section === "ml" && (
+            <div style={{ display: "flex", gap: 2, background: "var(--bg)", padding: 2, borderRadius: 6 }}>
+              {["7d", "30d", "90d", "12m", "all"].map((p) => (
+                <MTab key={p} on={preset === p} onClick={() => selectPreset(p)}>{p === "all" ? "Tudo" : p}</MTab>
+              ))}
+              <MTab on={preset === "custom" || showDP} onClick={() => setShowDP(!showDP)}>📅</MTab>
+            </div>
+          )}
           <button onClick={() => setDark((d) => !d)} style={{ width: 32, height: 32, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
             {dark ? "☀️" : "🌙"}
           </button>
         </div>
       </div>
 
-      {/* date picker */}
-      {showDP && (
+      {/* date picker (ML only) */}
+      {section === "ml" && showDP && (
         <div style={{ padding: "10px 22px", background: "var(--card)", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>De:</span>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 10px", fontSize: 12, colorScheme: dark ? "dark" : "light" }} />
@@ -223,31 +310,35 @@ export default function Home() {
         </div>
       )}
 
-      {/* conta tags */}
-      <div style={{ padding: "10px 22px", display: "flex", gap: 5, alignItems: "center", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginRight: 2 }}>Contas:</span>
-        <Tag on={contas.length === 4} onClick={() => setContas([...CONTAS_ALL])}>Todas</Tag>
-        {CONTAS_ALL.map((k) => (
-          <Tag key={k} on={contas.includes(k)} onClick={() => toggleConta(k)} color={ccHex(k, dark)}>{CONTA_LABELS[k]}</Tag>
-        ))}
-        {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>⏳ Carregando...</span>}
-      </div>
+      {/* conta tags (ML only) */}
+      {section === "ml" && (
+        <div style={{ padding: "10px 22px", display: "flex", gap: 5, alignItems: "center", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginRight: 2 }}>Contas:</span>
+          <Tag on={contas.length === 4} onClick={() => setContas([...CONTAS_ALL])}>Todas</Tag>
+          {CONTAS_ALL.map((k) => (
+            <Tag key={k} on={contas.includes(k)} onClick={() => toggleConta(k)} color={ccHex(k, dark)}>{CONTA_LABELS[k]}</Tag>
+          ))}
+          {loading && <span style={{ fontSize: 9, color: "var(--accent)", marginLeft: 8, fontWeight: 600 }}>⏳ Carregando...</span>}
+        </div>
+      )}
 
       {/* ═══ CONTENT ═══ */}
       <div style={{ padding: "18px 22px", maxWidth: 1400, margin: "0 auto" }}>
 
-        {/* tabs */}
-        <div style={{ display: "flex", gap: 2, marginBottom: 18, background: "var(--card)", padding: 3, borderRadius: 8, width: "fit-content", border: "1px solid var(--border)" }}>
-          {[{ id: "vendas", l: "Vendas", i: "📦" }, { id: "produtos", l: "Produtos", i: "🎯" }, { id: "publicidade", l: "Publicidade", i: "📢" }, { id: "problemas", l: "Reclamações", i: "⚠️" }].map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#000" : "var(--muted)", cursor: "pointer", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
-              <span style={{ fontSize: 12 }}>{t.i}</span>{t.l}
-            </button>
-          ))}
-        </div>
+        {/* ═══ ML SECTION ═══ */}
+        {section === "ml" && (<>
+          {/* tabs */}
+          <div style={{ display: "flex", gap: 2, marginBottom: 18, background: "var(--card)", padding: 3, borderRadius: 8, width: "fit-content", border: "1px solid var(--border)" }}>
+            {[{ id: "vendas", l: "Vendas", i: "📦" }, { id: "produtos", l: "Produtos", i: "🎯" }, { id: "publicidade", l: "Publicidade", i: "📢" }, { id: "problemas", l: "Reclamações", i: "⚠️" }].map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#000" : "var(--muted)", cursor: "pointer", display: "flex", gap: 4, alignItems: "center", transition: "all .15s" }}>
+                <span style={{ fontSize: 12 }}>{t.i}</span>{t.l}
+              </button>
+            ))}
+          </div>
 
-        {err && <div style={{ padding: 12, background: "var(--red)" + "22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
+          {err && <div style={{ padding: 12, background: "var(--red)" + "22", border: "1px solid var(--red)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--red)" }}>Erro: {err}</div>}
 
-        {loading ? <Loader /> : (<>
+          {loading ? <Loader /> : (<>
 
           {/* ═══ VENDAS ═══ */}
           {tab === "vendas" && (<>
@@ -680,10 +771,253 @@ export default function Home() {
             </div>
           </>)}
 
+          </>)}
         </>)}
 
+        {/* ═══ GESTÃO SECTION ═══ */}
+        {section === "gestao" && (<>
+            {/* Period selector + mode toggle */}
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 2, background: "var(--bg)", padding: 2, borderRadius: 6 }}>
+                {[{ id: "sku", l: "Por SKU" }, { id: "categoria", l: "Por Categoria" }].map((m) => (
+                  <button key={m.id} onClick={() => { setGestaoMode(m.id); setGestaoData(null); }} style={{ padding: "5px 14px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 4, cursor: "pointer", background: gestaoMode === m.id ? "var(--accent)" : "transparent", color: gestaoMode === m.id ? "#000" : "var(--muted)", transition: "all .15s" }}>{m.l}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 2, background: "var(--bg)", padding: 2, borderRadius: 6 }}>
+                {[{ id: "12m", l: "12 meses" }, { id: "24m", l: "24 meses" }, { id: "ano", l: "Ano atual" }].map((p) => (
+                  <button key={p.id} onClick={() => setGestaoPeriodo(p.id)} style={{ padding: "5px 12px", fontSize: 10, fontWeight: 600, border: "none", borderRadius: 4, cursor: "pointer", background: gestaoPeriodo === p.id ? "var(--blue)" : "transparent", color: gestaoPeriodo === p.id ? "#fff" : "var(--muted)", transition: "all .15s" }}>{p.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Search input */}
+            {gestaoMode === "sku" ? (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18 }}>
+                <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "var(--dim)", pointerEvents: "none" }}>🔍</span>
+                  <input
+                    type="text"
+                    value={gestaoSkuInput}
+                    onChange={(e) => setGestaoSkuInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => { if (e.key === "Enter" && gestaoSkuInput.trim()) { setGestaoSku(gestaoSkuInput.trim()); loadGestao("sku", gestaoSkuInput.trim()); } }}
+                    placeholder="Digite o SKU e pressione Enter..."
+                    style={{ width: "100%", padding: "10px 14px 10px 38px", fontSize: 14, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, outline: "none", fontFamily: "var(--mono)", letterSpacing: 0.5, transition: "border-color .15s" }}
+                    onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
+                    onBlur={(e) => e.target.style.borderColor = "var(--border)"}
+                  />
+                </div>
+                <button onClick={() => { if (gestaoSkuInput.trim()) { setGestaoSku(gestaoSkuInput.trim()); loadGestao("sku", gestaoSkuInput.trim()); } }} style={{ padding: "10px 22px", fontSize: 12, fontWeight: 700, background: "var(--accent)", color: "#000", border: "none", borderRadius: 8, cursor: "pointer" }}>Buscar</button>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 18 }}>
+                <select
+                  value={gestaoCatId}
+                  onChange={(e) => { setGestaoCatId(e.target.value); if (e.target.value) loadGestao("categoria", e.target.value); }}
+                  style={{ padding: "10px 14px", fontSize: 13, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, outline: "none", minWidth: 300, cursor: "pointer" }}
+                >
+                  <option value="">Selecione uma categoria...</option>
+                  {gestaoCategorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Loading */}
+            {gestaoLoading && <Loader />}
+
+            {/* No selection yet */}
+            {!gestaoLoading && !gestaoData && (
+              <div style={{ textAlign: "center", padding: 60, color: "var(--muted)" }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{gestaoMode === "sku" ? "📦" : "📂"}</div>
+                <div style={{ fontSize: 14 }}>{gestaoMode === "sku" ? "Digite um SKU para ver a evolução" : "Selecione uma categoria para analisar"}</div>
+              </div>
+            )}
+
+            {/* Results */}
+            {!gestaoLoading && gestaoData && (<>
+              {/* Summary card */}
+              {gestaoData.resumo ? (
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 22px", marginBottom: 16 }}>
+                  {gestaoMode === "sku" ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+                        <span style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--accent)" }}>{gestaoData.resumo.sku}</span>
+                        <span style={{ fontSize: 13, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gestaoData.resumo.descricao || ""}</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Estoque</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{fmt(gestaoData.resumo.estoque)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Preço Venda</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)" }}>{fmtR(gestaoData.resumo.preco)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Custo</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--red)" }}>{fmtR(gestaoData.resumo.precocusto)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Margem</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: Number(gestaoData.resumo.preco) > 0 ? "var(--accent)" : "var(--muted)" }}>
+                            {Number(gestaoData.resumo.preco) > 0 ? fmtP((1 - Number(gestaoData.resumo.precocusto) / Number(gestaoData.resumo.preco)) * 100) : "–"}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)", textTransform: "capitalize", marginBottom: 6 }}>{gestaoData.resumo.categoria}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginTop: 6 }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>SKUs na Categoria</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{fmt(gestaoData.resumo.total_skus)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Estoque Total</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{fmt(gestaoData.resumo.estoque_total)}</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 24, marginBottom: 16, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  {gestaoMode === "sku" ? `SKU "${gestaoSku}" não encontrado no estoque` : "Categoria não encontrada"}
+                </div>
+              )}
+
+              {/* Charts */}
+              {gestaoData.vendas_mes.length > 0 && (<>
+                {(() => {
+                  // Merge vendas + estoque by month
+                  const estoqueMap = {};
+                  (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[e.mes] = Number(e.estoque); });
+                  const merged = gestaoData.vendas_mes.map((v) => ({
+                    mes: v.mes,
+                    mesLabel: (() => { const d = new Date(v.mes + "T12:00:00"); const m = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return `${m[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`; })(),
+                    unidades: Number(v.unidades) || 0,
+                    faturamento: Number(v.faturamento) || 0,
+                    preco_medio: Number(v.preco_medio) || 0,
+                    estoque: estoqueMap[v.mes] != null ? estoqueMap[v.mes] : null,
+                  }));
+                  // Add months that only have estoque but no sales
+                  (gestaoData.estoque_mes || []).forEach((e) => {
+                    if (!merged.find((m) => m.mes === e.mes)) {
+                      const d = new Date(e.mes + "T12:00:00");
+                      const ml = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+                      merged.push({ mes: e.mes, mesLabel: `${ml[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`, unidades: 0, faturamento: 0, preco_medio: 0, estoque: Number(e.estoque) });
+                    }
+                  });
+                  merged.sort((a, b) => a.mes.localeCompare(b.mes));
+
+                  return (<>
+                    <Sec icon="📈">Vendas por Mês (NF)</Sec>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {/* Units chart */}
+                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Unidades Vendidas</h3>
+                        <ResponsiveContainer width="100%" height={240}>
+                          <BarChart data={merged}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                            <YAxis stroke="var(--dim)" fontSize={9} />
+                            <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
+                            <Bar dataKey="unidades" name="Unidades" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* Revenue chart */}
+                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Faturamento</h3>
+                        <ResponsiveContainer width="100%" height={240}>
+                          <BarChart data={merged}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                            <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
+                            <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                            <Bar dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Estoque + Preço Médio */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                      {/* Stock chart */}
+                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Estoque (fim do mês)</h3>
+                        <ResponsiveContainer width="100%" height={240}>
+                          <AreaChart data={merged}>
+                            <defs>
+                              <linearGradient id="gestGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={dark ? "#F59E0B" : "#D97706"} stopOpacity={.25} />
+                                <stop offset="95%" stopColor={dark ? "#F59E0B" : "#D97706"} stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                            <YAxis stroke="var(--dim)" fontSize={9} />
+                            <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
+                            <Area type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} fill="url(#gestGrad)" strokeWidth={2} connectNulls />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* Avg price chart */}
+                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Preço Médio NF</h3>
+                        <ResponsiveContainer width="100%" height={240}>
+                          <LineChart data={merged}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                            <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={["auto", "auto"]} />
+                            <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                            <Line type="monotone" dataKey="preco_medio" name="Preço Médio" stroke={dark ? "#A855F7" : "#7C3AED"} dot={{ r: 3 }} strokeWidth={2} connectNulls />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </>);
+                })()}
+              </>)}
+
+              {/* No data message */}
+              {gestaoData.vendas_mes.length === 0 && gestaoData.resumo && (
+                <div style={{ textAlign: "center", padding: 40, color: "var(--muted)", fontSize: 13 }}>Sem dados de vendas (NF) no período selecionado</div>
+              )}
+
+              {/* Top SKUs for category mode */}
+              {gestaoMode === "categoria" && (gestaoData.top_skus || []).length > 0 && (<>
+                <Sec icon="🏆">Top SKUs da Categoria</Sec>
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 20px" }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, padding: "0 0 8px", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ width: 28, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>#</span>
+                    <span style={{ width: 100, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>SKU</span>
+                    <span style={{ flex: 1, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>Descrição</span>
+                    <span style={{ width: 70, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Unidades</span>
+                    <span style={{ width: 90, fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", textAlign: "right" }}>Faturamento</span>
+                  </div>
+                  {gestaoData.top_skus.map((s, i) => (
+                    <div key={s.sku} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: i < gestaoData.top_skus.length - 1 ? "1px solid var(--border)11" : "none", cursor: "pointer" }}
+                      onClick={() => { setGestaoMode("sku"); setGestaoSkuInput(s.sku); setGestaoSku(s.sku); loadGestao("sku", s.sku); }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      <span style={{ width: 28, fontSize: 11, color: "var(--dim)", fontFamily: "var(--mono)", fontWeight: 600 }}>{i + 1}</span>
+                      <span style={{ width: 100, fontSize: 12, fontFamily: "var(--mono)", fontWeight: 600, color: "var(--accent)" }}>{s.sku}</span>
+                      <span style={{ flex: 1, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.descricao}</span>
+                      <span style={{ width: 70, fontSize: 13, fontFamily: "var(--mono)", fontWeight: 700, textAlign: "right" }}>{fmt(s.unidades)}</span>
+                      <span style={{ width: 90, fontSize: 13, fontFamily: "var(--mono)", fontWeight: 600, textAlign: "right", color: "var(--green)" }}>{fmtR(s.faturamento)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>)}
+            </>)}
+          </>)}
+
         <div style={{ textAlign: "center", padding: "28px 0 14px", fontSize: 9, color: "var(--dim)" }}>
-          FullPro Dashboard • {dates.f} → {dates.t} • {contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}
+          FullPro Dashboard • {section === "ml" ? `${dates.f} → ${dates.t} • ${contas.length === 4 ? "Todas as contas" : contas.map((c) => CONTA_LABELS[c]).join(", ")}` : `Gestão de Estoque • ${gestaoPeriodo === "12m" ? "Últimos 12 meses" : gestaoPeriodo === "24m" ? "Últimos 24 meses" : "Ano atual"}`}
         </div>
       </div>
     </div>
