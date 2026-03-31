@@ -1,4 +1,4 @@
-  "use client";
+"use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -184,14 +184,16 @@ export default function Home() {
         const skuSafe = value.replace(/'/g, "''");
         queries = [
           { name: "resumo", sql: `SELECT ea.sku, ea.quantidade as estoque, ea.preco, ea.precocusto, ni.descricao FROM estoque_atual ea LEFT JOIN (SELECT DISTINCT ON (sku) sku, descricao FROM nfe_items WHERE considerar = true ORDER BY sku, data_emissao DESC) ni ON ni.sku = ea.sku WHERE ea.sku = '${skuSafe}'` },
-          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento, round((sum(ni.valor_total)/nullif(sum(ni.quantidade),0))::numeric,2) as preco_medio FROM nfe_items ni WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "vendas_detalhe", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, CASE WHEN length(regexp_replace(nh.cliente_doc, '[^0-9]', '', 'g')) > 11 THEN 'CNPJ' ELSE 'CPF' END as tipo, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni JOIN nfe_header nh ON ni.nfe_id_bling = nh.nfe_id_bling WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '2025-11-01' GROUP BY mes, tipo ORDER BY mes, tipo` },
           { name: "estoque_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data DESC` },
         ];
       } else {
         const catId = Number(value);
         queries = [
-          { name: "resumo", sql: `SELECT c.nome as categoria, count(DISTINCT ni.sku) as total_skus, round(sum(ea.quantidade)::numeric) as estoque_total FROM categorias c JOIN nfe_items ni ON ni.categoria_id = c.id AND ni.considerar = true LEFT JOIN estoque_atual ea ON ea.sku = ni.sku WHERE c.id = ${catId} GROUP BY c.nome` },
-          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento, round((sum(ni.valor_total)/nullif(sum(ni.quantidade),0))::numeric,2) as preco_medio FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "resumo", sql: `SELECT c.nome as categoria, (SELECT count(DISTINCT ni2.sku) FROM nfe_items ni2 WHERE ni2.considerar = true AND ni2.categoria_id = c.id) as total_skus, (SELECT coalesce(sum(ea2.quantidade),0) FROM estoque_atual ea2 WHERE ea2.sku IN (SELECT DISTINCT ni3.sku FROM nfe_items ni3 WHERE ni3.considerar = true AND ni3.categoria_id = c.id)) as estoque_total FROM categorias c WHERE c.id = ${catId}` },
+          { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
+          { name: "vendas_detalhe", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, CASE WHEN length(regexp_replace(nh.cliente_doc, '[^0-9]', '', 'g')) > 11 THEN 'CNPJ' ELSE 'CPF' END as tipo, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni JOIN nfe_header nh ON ni.nfe_id_bling = nh.nfe_id_bling WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '2025-11-01' GROUP BY mes, tipo ORDER BY mes, tipo` },
           { name: "estoque_mes", sql: `WITH cat_skus AS (SELECT DISTINCT sku FROM nfe_items WHERE considerar = true AND categoria_id = ${catId}), monthly AS (SELECT DISTINCT ON (eh.sku, date_trunc('month', eh.data)) eh.sku, date_trunc('month', eh.data)::date as mes, eh.quantidade FROM estoque_historico eh JOIN cat_skus cs ON eh.sku = cs.sku WHERE eh.data >= '${f}' ORDER BY eh.sku, date_trunc('month', eh.data), eh.data DESC) SELECT mes, sum(quantidade) as estoque FROM monthly GROUP BY mes ORDER BY mes` },
           { name: "top_skus", sql: `SELECT ni.sku, min(ni.descricao) as descricao, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY ni.sku ORDER BY faturamento DESC LIMIT 15` },
         ];
@@ -200,6 +202,7 @@ export default function Home() {
       setGestaoData({
         resumo: (res.resumo || [])[0] || null,
         vendas_mes: res.vendas_mes || [],
+        vendas_detalhe: res.vendas_detalhe || [],
         estoque_mes: res.estoque_mes || [],
         top_skus: res.top_skus || [],
       });
@@ -891,93 +894,138 @@ export default function Home() {
               {/* Charts */}
               {gestaoData.vendas_mes.length > 0 && (<>
                 {(() => {
+                  const mLabel = (m) => { const d = new Date(m + "T12:00:00"); const ml = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return `${ml[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`; };
                   // Merge vendas + estoque by month
                   const estoqueMap = {};
                   (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[e.mes] = Number(e.estoque); });
-                  const merged = gestaoData.vendas_mes.map((v) => ({
-                    mes: v.mes,
-                    mesLabel: (() => { const d = new Date(v.mes + "T12:00:00"); const m = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return `${m[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`; })(),
-                    unidades: Number(v.unidades) || 0,
-                    faturamento: Number(v.faturamento) || 0,
-                    preco_medio: Number(v.preco_medio) || 0,
-                    estoque: estoqueMap[v.mes] != null ? estoqueMap[v.mes] : null,
-                  }));
+                  // Build detail maps (CPF/CNPJ) from post-nov data
+                  const detMap = {}; // { mes: { cpf_un, cnpj_un, cpf_fat, cnpj_fat } }
+                  (gestaoData.vendas_detalhe || []).forEach((d) => {
+                    if (!detMap[d.mes]) detMap[d.mes] = { cpf_un: 0, cnpj_un: 0, cpf_fat: 0, cnpj_fat: 0 };
+                    if (d.tipo === "CPF") { detMap[d.mes].cpf_un += Number(d.unidades) || 0; detMap[d.mes].cpf_fat += Number(d.faturamento) || 0; }
+                    else { detMap[d.mes].cnpj_un += Number(d.unidades) || 0; detMap[d.mes].cnpj_fat += Number(d.faturamento) || 0; }
+                  });
+                  const merged = gestaoData.vendas_mes.map((v) => {
+                    const det = detMap[v.mes];
+                    const estq = estoqueMap[v.mes];
+                    const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
+                    return {
+                      mes: v.mes, mesLabel: mLabel(v.mes),
+                      unidades: Number(v.unidades) || 0,
+                      faturamento: Number(v.faturamento) || 0,
+                      estoque: estq != null ? estq : null,
+                      custo_estoque: estq != null && precoAtual > 0 ? Math.round(estq * precoAtual) : null,
+                      // CPF/CNPJ split (only available post-nov)
+                      cpf_un: det ? det.cpf_un : null, cnpj_un: det ? det.cnpj_un : null,
+                      cpf_fat: det ? det.cpf_fat : null, cnpj_fat: det ? det.cnpj_fat : null,
+                    };
+                  });
                   // Add months that only have estoque but no sales
                   (gestaoData.estoque_mes || []).forEach((e) => {
                     if (!merged.find((m) => m.mes === e.mes)) {
-                      const d = new Date(e.mes + "T12:00:00");
-                      const ml = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-                      merged.push({ mes: e.mes, mesLabel: `${ml[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`, unidades: 0, faturamento: 0, preco_medio: 0, estoque: Number(e.estoque) });
+                      const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
+                      const estq = Number(e.estoque);
+                      merged.push({ mes: e.mes, mesLabel: mLabel(e.mes), unidades: 0, faturamento: 0, estoque: estq, custo_estoque: precoAtual > 0 ? Math.round(estq * precoAtual) : null, cpf_un: null, cnpj_un: null, cpf_fat: null, cnpj_fat: null });
                     }
                   });
                   merged.sort((a, b) => a.mes.localeCompare(b.mes));
+                  const hasDet = merged.some((m) => m.cpf_un != null);
+                  const hasEstoque = merged.some((m) => m.estoque != null);
 
                   return (<>
-                    <Sec icon="📈">Vendas por Mês (NF)</Sec>
+                    {/* Row 1: Estoque vs Vendas (combined) + Custo Estoque vs Faturamento */}
+                    <Sec icon="📈">Evolução Mensal</Sec>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      {/* Units chart */}
+                      {/* Estoque + Unidades Vendidas */}
                       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Unidades Vendidas</h3>
-                        <ResponsiveContainer width="100%" height={240}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 6px 10px" }}>
+                          <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>Estoque vs Vendas</h3>
+                          <div style={{ display: "flex", gap: 10 }}>
+                            {hasEstoque && <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 3, borderRadius: 1, background: dark ? "#F59E0B" : "#D97706" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Estoque</span></div>}
+                            <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#3B82F6" : "#2563EB" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Vendas</span></div>
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={260}>
                           <BarChart data={merged}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis stroke="var(--dim)" fontSize={9} />
-                            <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
-                            <Bar dataKey="unidades" name="Unidades" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
+                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} />
+                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} />}
+                            <Tooltip content={<ChartTT formatter={(v, n) => n === "Estoque" ? `${fmt(v)} un` : `${fmt(v)} un`} />} />
+                            <Bar yAxisId="l" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
+                            {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3 }} strokeWidth={2} connectNulls />}
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
-                      {/* Revenue chart */}
+                      {/* Custo Estoque vs Faturamento */}
                       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Faturamento</h3>
-                        <ResponsiveContainer width="100%" height={240}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 6px 10px" }}>
+                          <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>Faturamento vs Custo Estoque</h3>
+                          <div style={{ display: "flex", gap: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#22C55E" : "#16A34A" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Faturamento</span></div>
+                            {hasEstoque && <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 3, borderRadius: 1, background: dark ? "#EF4444" : "#DC2626" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>Custo Estoque</span></div>}
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={260}>
                           <BarChart data={merged}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
+                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
+                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#EF4444" : "#DC2626"} fontSize={9} tickFormatter={(v) => fmtR(v)} />}
                             <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
-                            <Bar dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
+                            <Bar yAxisId="l" dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
+                            {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3 }} strokeWidth={2} connectNulls />}
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
 
-                    {/* Estoque + Preço Médio */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-                      {/* Stock chart */}
-                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Estoque (fim do mês)</h3>
-                        <ResponsiveContainer width="100%" height={240}>
-                          <AreaChart data={merged}>
-                            <defs>
-                              <linearGradient id="gestGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={dark ? "#F59E0B" : "#D97706"} stopOpacity={.25} />
-                                <stop offset="95%" stopColor={dark ? "#F59E0B" : "#D97706"} stopOpacity={0} />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis stroke="var(--dim)" fontSize={9} />
-                            <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
-                            <Area type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} fill="url(#gestGrad)" strokeWidth={2} connectNulls />
-                          </AreaChart>
-                        </ResponsiveContainer>
+                    {/* Row 2: CPF/CNPJ split (only post-nov data) */}
+                    {hasDet && (<>
+                      <Sec icon="👥">Vendas CPF vs CNPJ (a partir de Nov/25)</Sec>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        {/* Units by type */}
+                        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 6px 10px" }}>
+                            <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>Unidades por Tipo</h3>
+                            <div style={{ display: "flex", gap: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#3B82F6" : "#2563EB" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>CPF</span></div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#F97316" : "#EA580C" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>CNPJ</span></div>
+                            </div>
+                          </div>
+                          <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={merged.filter((m) => m.cpf_un != null)} stackOffset="none">
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                              <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                              <YAxis stroke="var(--dim)" fontSize={9} />
+                              <Tooltip content={<ChartTT formatter={(v) => fmt(v)} />} />
+                              <Bar dataKey="cpf_un" name="CPF" stackId="a" fill={dark ? "#3B82F6" : "#2563EB"} radius={[0, 0, 0, 0]} />
+                              <Bar dataKey="cnpj_un" name="CNPJ" stackId="a" fill={dark ? "#F97316" : "#EA580C"} radius={[3, 3, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        {/* Revenue by type */}
+                        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 6px 10px" }}>
+                            <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>Faturamento por Tipo</h3>
+                            <div style={{ display: "flex", gap: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#22C55E" : "#16A34A" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>CPF</span></div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dark ? "#A855F7" : "#7C3AED" }} /><span style={{ fontSize: 8, color: "var(--muted)" }}>CNPJ</span></div>
+                            </div>
+                          </div>
+                          <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={merged.filter((m) => m.cpf_fat != null)} stackOffset="none">
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                              <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
+                              <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} />
+                              <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                              <Bar dataKey="cpf_fat" name="CPF" stackId="a" fill={dark ? "#22C55E" : "#16A34A"} radius={[0, 0, 0, 0]} />
+                              <Bar dataKey="cnpj_fat" name="CNPJ" stackId="a" fill={dark ? "#A855F7" : "#7C3AED"} radius={[3, 3, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
-                      {/* Avg price chart */}
-                      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 10px" }}>
-                        <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, margin: "0 6px 10px" }}>Preço Médio NF</h3>
-                        <ResponsiveContainer width="100%" height={240}>
-                          <LineChart data={merged}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                            <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={["auto", "auto"]} />
-                            <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
-                            <Line type="monotone" dataKey="preco_medio" name="Preço Médio" stroke={dark ? "#A855F7" : "#7C3AED"} dot={{ r: 3 }} strokeWidth={2} connectNulls />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+                    </>)}
                   </>);
                 })()}
               </>)}
