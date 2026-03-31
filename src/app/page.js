@@ -154,11 +154,11 @@ export default function Home() {
     const now = new Date();
     let from;
     if (gestaoPeriodo === "24m") {
-      from = new Date(now.getFullYear() - 2, now.getMonth(), 1);
+      from = new Date(now.getFullYear(), now.getMonth() - 23, 1);
     } else if (gestaoPeriodo === "ano") {
       from = new Date(now.getFullYear(), 0, 1);
     } else {
-      from = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+      from = new Date(now.getFullYear(), now.getMonth() - 11, 1);
     }
     return { f: ds(from), t: ds(now) };
   }, [gestaoPeriodo]);
