@@ -190,6 +190,7 @@ export default function Home() {
           { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
           { name: "vendas_detalhe", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, CASE WHEN length(regexp_replace(nh.cliente_doc, '[^0-9]', '', 'g')) > 11 THEN 'CNPJ' ELSE 'CPF' END as tipo, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni JOIN nfe_header nh ON ni.nfe_id_bling = nh.nfe_id_bling WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '2025-11-01' GROUP BY mes, tipo ORDER BY mes, tipo` },
           { name: "estoque_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data DESC` },
+          { name: "estoque_inicio_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque_inicio FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data ASC` },
         ];
       } else {
         const catId = Number(value);
@@ -208,6 +209,7 @@ export default function Home() {
         vendas_mes: res.vendas_mes || [],
         vendas_detalhe: res.vendas_detalhe || [],
         estoque_mes: res.estoque_mes || [],
+        estoque_inicio_mes: res.estoque_inicio_mes || [],
         top_skus: res.top_skus || [],
       });
     } catch (e) { console.error("gestao load error", e); }
@@ -853,26 +855,72 @@ export default function Home() {
                         <span style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--accent)" }}>{gestaoData.resumo.sku}</span>
                         <span style={{ fontSize: 13, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gestaoData.resumo.descricao || ""}</span>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 10 }}>
-                        <div>
-                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Estoque</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{fmt(gestaoData.resumo.estoque)}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Preço Venda</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)" }}>{fmtR(gestaoData.resumo.preco)}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Custo</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--red)" }}>{fmtR(gestaoData.resumo.precocusto)}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Margem</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: Number(gestaoData.resumo.preco) > 0 ? "var(--accent)" : "var(--muted)" }}>
-                            {Number(gestaoData.resumo.preco) > 0 ? fmtP((1 - Number(gestaoData.resumo.precocusto) / Number(gestaoData.resumo.preco)) * 100) : "–"}
-                          </div>
-                        </div>
-                      </div>
+                      {(() => {
+                        // Calculate metrics
+                        const vendas = gestaoData.vendas_mes || [];
+                        const estoqueIni = gestaoData.estoque_inicio_mes || [];
+                        const normD = (d) => typeof d === "string" ? d.substring(0, 10) : d;
+                        const totalUn = vendas.reduce((s, v) => s + (Number(v.unidades) || 0), 0);
+                        const totalFat = vendas.reduce((s, v) => s + (Number(v.faturamento) || 0), 0);
+                        const totalMeses = vendas.length;
+                        const mediaBruta = totalMeses > 0 ? totalUn / totalMeses : 0;
+                        // Build estoque inicio map
+                        const estoqueIniMap = {};
+                        estoqueIni.forEach((e) => { estoqueIniMap[normD(e.mes)] = Number(e.estoque_inicio); });
+                        // Valid months: estoque no dia 1 >= media bruta
+                        const mesesValidos = vendas.filter((v) => {
+                          const est = estoqueIniMap[normD(v.mes)];
+                          return est != null && est >= mediaBruta;
+                        }).length;
+                        const mesesSemEstoque = totalMeses - mesesValidos;
+                        const mediaReal = mesesValidos > 0 ? totalUn / mesesValidos : 0;
+                        return (
+                          <>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Estoque</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>{fmt(gestaoData.resumo.estoque)}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Preço Venda</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)" }}>{fmtR(gestaoData.resumo.preco)}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Custo</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--red)" }}>{fmtR(gestaoData.resumo.precocusto)}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Margem</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: Number(gestaoData.resumo.preco) > 0 ? "var(--accent)" : "var(--muted)" }}>
+                                  {Number(gestaoData.resumo.preco) > 0 ? fmtP((1 - Number(gestaoData.resumo.precocusto) / Number(gestaoData.resumo.preco)) * 100) : "–"}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Vendas Período</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--blue)" }}>{fmt(totalUn)}</div>
+                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{fmtR(totalFat)} faturado</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Média Bruta/Mês</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--muted)" }}>{mediaBruta > 0 ? mediaBruta.toFixed(1) : "–"}</div>
+                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{totalMeses} meses</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Meses s/ Estoque</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: mesesSemEstoque > 0 ? "var(--red)" : "var(--green)" }}>{mesesSemEstoque}</div>
+                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>de {totalMeses} meses</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Média Real/Mês</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--accent)" }}>{mediaReal > 0 ? mediaReal.toFixed(1) : "–"}</div>
+                                <div style={{ fontSize: 9, color: "var(--dim)", marginTop: 1 }}>{mesesValidos} meses válidos</div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </>
                   ) : (
                     <>
