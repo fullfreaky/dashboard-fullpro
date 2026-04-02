@@ -953,44 +953,50 @@ export default function Home() {
               {gestaoData.vendas_mes.length > 0 && (<>
                 {(() => {
                   const mLabel = (m) => { const d = new Date(m + "T12:00:00"); const ml = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return `${ml[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`; };
-                  const normDate = (d) => typeof d === "string" ? d.substring(0, 10) : d; // normalize "2025-04-01T00:00:00" → "2025-04-01"
-                  // Merge vendas + estoque by month
+                  const normDate = (d) => typeof d === "string" ? d.substring(0, 10) : d;
+                  const padMonth = (d) => { const y = d.getFullYear(); const m = d.getMonth() + 1; return `${y}-${String(m).padStart(2, "0")}-01`; };
+
+                  // Build all months in the period
+                  const { f: gf } = gestaoDateRange;
+                  const startM = new Date(gf + "T12:00:00");
+                  const nowM = new Date();
+                  const allMonths = [];
+                  for (let m = new Date(startM.getFullYear(), startM.getMonth(), 1); m <= nowM; m.setMonth(m.getMonth() + 1)) {
+                    allMonths.push(padMonth(new Date(m)));
+                  }
+
+                  // Build maps
+                  const vendasMap = {};
+                  (gestaoData.vendas_mes || []).forEach((v) => { vendasMap[normDate(v.mes)] = v; });
                   const estoqueMap = {};
                   (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[normDate(e.mes)] = Number(e.estoque); });
-                  // Build detail maps (CPF/CNPJ) from post-nov data
-                  const detMap = {}; // { mes: { cpf_un, cnpj_un, cpf_fat, cnpj_fat } }
+                  const detMap = {};
                   (gestaoData.vendas_detalhe || []).forEach((d) => {
                     const k = normDate(d.mes);
                     if (!detMap[k]) detMap[k] = { cpf_un: 0, cnpj_un: 0, cpf_fat: 0, cnpj_fat: 0 };
                     if (d.tipo === "CPF") { detMap[k].cpf_un += Number(d.unidades) || 0; detMap[k].cpf_fat += Number(d.faturamento) || 0; }
                     else { detMap[k].cnpj_un += Number(d.unidades) || 0; detMap[k].cnpj_fat += Number(d.faturamento) || 0; }
                   });
-                  const merged = gestaoData.vendas_mes.map((v) => {
-                    const mk = normDate(v.mes);
+
+                  const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
+                  // Carry forward estoque for months without data
+                  let lastEstoque = null;
+                  const merged = allMonths.map((mk) => {
+                    const v = vendasMap[mk];
                     const det = detMap[mk];
                     const estq = estoqueMap[mk];
-                    const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
+                    if (estq != null) lastEstoque = estq;
+                    const estVal = estq != null ? estq : lastEstoque;
                     return {
                       mes: mk, mesLabel: mLabel(mk),
-                      unidades: Number(v.unidades) || 0,
-                      faturamento: Number(v.faturamento) || 0,
-                      estoque: estq != null ? estq : null,
-                      custo_estoque: estq != null && precoAtual > 0 ? Math.round(estq * precoAtual) : null,
-                      // CPF/CNPJ split (only available post-nov)
+                      unidades: v ? (Number(v.unidades) || 0) : 0,
+                      faturamento: v ? (Number(v.faturamento) || 0) : 0,
+                      estoque: estVal,
+                      custo_estoque: estVal != null && precoAtual > 0 ? Math.round(estVal * precoAtual) : null,
                       cpf_un: det ? det.cpf_un : null, cnpj_un: det ? det.cnpj_un : null,
                       cpf_fat: det ? det.cpf_fat : null, cnpj_fat: det ? det.cnpj_fat : null,
                     };
                   });
-                  // Add months that only have estoque but no sales
-                  (gestaoData.estoque_mes || []).forEach((e) => {
-                    const mk = normDate(e.mes);
-                    if (!merged.find((m) => m.mes === mk)) {
-                      const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
-                      const estq = Number(e.estoque);
-                      merged.push({ mes: mk, mesLabel: mLabel(mk), unidades: 0, faturamento: 0, estoque: estq, custo_estoque: precoAtual > 0 ? Math.round(estq * precoAtual) : null, cpf_un: null, cnpj_un: null, cpf_fat: null, cnpj_fat: null });
-                    }
-                  });
-                  merged.sort((a, b) => a.mes.localeCompare(b.mes));
                   const hasDet = merged.some((m) => m.cpf_un != null);
                   const hasEstoque = merged.some((m) => m.estoque != null);
 
