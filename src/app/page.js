@@ -176,7 +176,7 @@ export default function Home() {
   }, []);
 
   const loadGestaoRef = { current: 0 };
-  const loadGestao = useCallback(async (mode, value) => {
+  const loadGestao = async (mode, value) => {
     if (!value) return;
     const reqId = ++loadGestaoRef.current;
     setGestaoLoading(true);
@@ -214,7 +214,7 @@ export default function Home() {
       });
     } catch (e) { console.error("gestao load error", e); }
     if (reqId === loadGestaoRef.current) setGestaoLoading(false);
-  }, [gestaoDateRange]);
+  };
 
   // Reload gestao when period changes (if there's already a selection)
   const prevPeriodo = useMemo(() => gestaoPeriodo, [gestaoPeriodo]);
