@@ -1042,7 +1042,6 @@ export default function Home() {
                             <Bar dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
                             {hasEstoque && <Line type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3, fill: dark ? "#EF4444" : "#DC2626" }} strokeWidth={2.5} connectNulls />}
                           </ComposedChart>
-                          </ComposedChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
