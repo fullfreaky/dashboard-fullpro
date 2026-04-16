@@ -1014,14 +1014,22 @@ export default function Home() {
                           </div>
                         </div>
                         <ResponsiveContainer width="100%" height={260}>
+                          {(() => {
+                            const maxEst = Math.max(...merged.map(m => m.estoque || 0), 1);
+                            const maxVen = Math.max(...merged.map(m => m.unidades || 0), 1);
+                            const vendasMax = Math.max(maxVen, Math.ceil(maxEst / 10));
+                            return (
                           <ComposedChart data={merged}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis yAxisId="shared" stroke="var(--dim)" fontSize={9} domain={[0, "auto"]} />
+                            <YAxis yAxisId="v" stroke={dark ? "#3B82F6" : "#2563EB"} fontSize={9} domain={[0, vendasMax]} allowDataOverflow={false} />
+                            {hasEstoque && <YAxis yAxisId="e" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} domain={[0, maxEst * 1.1]} allowDataOverflow={false} />}
                             <Tooltip content={<ChartTT formatter={(v, n) => `${fmt(v)} un`} />} />
-                            <Bar yAxisId="shared" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
-                            {hasEstoque && <Line yAxisId="shared" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
+                            <Bar yAxisId="v" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
+                            {hasEstoque && <Line yAxisId="e" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
                           </ComposedChart>
+                            );
+                          })()}
                         </ResponsiveContainer>
                       </div>
                       {/* Custo Estoque vs Faturamento (post-nov only) */}
@@ -1038,7 +1046,25 @@ export default function Home() {
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
                             <YAxis yAxisId="shared" stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "auto"]} />
-                            <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
+                            <Tooltip content={({ active, payload, label }) => {
+                              if (!active || !payload?.length) return null;
+                              const fat = payload.find(p => p.dataKey === "faturamento")?.value;
+                              const custo = payload.find(p => p.dataKey === "custo_estoque")?.value;
+                              const retorno = fat && custo && custo > 0 ? ((fat / custo) * 100).toFixed(0) : null;
+                              return (
+                                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 11px", fontSize: 10, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>
+                                  <div style={{ color: "var(--muted)", marginBottom: 3, fontWeight: 700 }}>{label}</div>
+                                  {payload.filter(p => p.value != null).map((p, i) => (
+                                    <div key={i} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 1 }}>
+                                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color || p.fill, flexShrink: 0 }} />
+                                      <span style={{ color: "var(--muted)" }}>{p.name}:</span>
+                                      <span style={{ fontWeight: 700, fontFamily: "var(--mono)" }}>{fmtR(p.value)}</span>
+                                    </div>
+                                  ))}
+                                  {retorno && <div style={{ borderTop: "1px solid var(--border)", marginTop: 3, paddingTop: 3, color: "var(--accent)", fontWeight: 700, fontFamily: "var(--mono)" }}>Retorno: {retorno}%</div>}
+                                </div>
+                              );
+                            }} />
                             <Bar yAxisId="shared" dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
                             {hasEstoque && <Line yAxisId="shared" type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3, fill: dark ? "#EF4444" : "#DC2626" }} strokeWidth={2.5} connectNulls />}
                           </ComposedChart>
