@@ -1023,7 +1023,7 @@ export default function Home() {
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
                             <YAxis yAxisId="v" stroke={dark ? "#3B82F6" : "#2563EB"} fontSize={9} domain={[0, vendasMax]} allowDataOverflow={false} />
-                            {hasEstoque && <YAxis yAxisId="e" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} domain={[0, maxEst * 1.1]} allowDataOverflow={false} />}
+                            {hasEstoque && <YAxis yAxisId="e" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} domain={[0, Math.ceil(maxEst * 1.1)]} allowDataOverflow={false} tickFormatter={(v) => Math.round(v)} />}
                             <Tooltip content={<ChartTT formatter={(v, n) => `${fmt(v)} un`} />} />
                             <Bar yAxisId="v" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
                             {hasEstoque && <Line yAxisId="e" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
