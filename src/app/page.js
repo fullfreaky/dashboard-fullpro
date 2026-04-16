@@ -1017,11 +1017,10 @@ export default function Home() {
                           <ComposedChart data={merged}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} domain={[0, "dataMax + 10"]} allowDataOverflow={false} />
-                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#F59E0B" : "#D97706"} fontSize={9} domain={[0, "dataMax + 10"]} allowDataOverflow={false} />}
+                            <YAxis stroke="var(--dim)" fontSize={9} domain={[0, "auto"]} />
                             <Tooltip content={<ChartTT formatter={(v, n) => `${fmt(v)} un`} />} />
-                            <Bar yAxisId="l" dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
-                            {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
+                            <Bar dataKey="unidades" name="Vendas" fill={dark ? "#3B82F6" : "#2563EB"} radius={[3, 3, 0, 0]} />
+                            {hasEstoque && <Line type="monotone" dataKey="estoque" name="Estoque" stroke={dark ? "#F59E0B" : "#D97706"} dot={{ r: 3, fill: dark ? "#F59E0B" : "#D97706" }} strokeWidth={2.5} connectNulls />}
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
@@ -1038,11 +1037,11 @@ export default function Home() {
                           <ComposedChart data={merged.filter((m) => m.mes >= "2025-11-01")}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                             <XAxis dataKey="mesLabel" stroke="var(--dim)" fontSize={9} />
-                            <YAxis yAxisId="l" stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "dataMax + 1000"]} allowDataOverflow={false} />
-                            {hasEstoque && <YAxis yAxisId="r" orientation="right" stroke={dark ? "#EF4444" : "#DC2626"} fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "dataMax + 1000"]} allowDataOverflow={false} />}
+                            <YAxis stroke="var(--dim)" fontSize={9} tickFormatter={(v) => fmtR(v)} domain={[0, "auto"]} />
                             <Tooltip content={<ChartTT formatter={(v) => fmtR(v)} />} />
-                            <Bar yAxisId="l" dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
-                            {hasEstoque && <Line yAxisId="r" type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3, fill: dark ? "#EF4444" : "#DC2626" }} strokeWidth={2.5} connectNulls />}
+                            <Bar dataKey="faturamento" name="Faturamento" fill={dark ? "#22C55E" : "#16A34A"} radius={[3, 3, 0, 0]} />
+                            {hasEstoque && <Line type="monotone" dataKey="custo_estoque" name="Custo Estoque" stroke={dark ? "#EF4444" : "#DC2626"} dot={{ r: 3, fill: dark ? "#EF4444" : "#DC2626" }} strokeWidth={2.5} connectNulls />}
+                          </ComposedChart>
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
