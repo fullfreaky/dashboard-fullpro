@@ -189,8 +189,7 @@ export default function Home() {
           { name: "resumo", sql: `SELECT ea.sku, ea.quantidade as estoque, ea.preco, ea.precocusto, ni.descricao FROM estoque_atual ea LEFT JOIN (SELECT DISTINCT ON (sku) sku, descricao FROM nfe_items WHERE considerar = true ORDER BY sku, data_emissao DESC) ni ON ni.sku = ea.sku WHERE ea.sku = '${skuSafe}'` },
           { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
           { name: "vendas_detalhe", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, CASE WHEN length(regexp_replace(nh.cliente_doc, '[^0-9]', '', 'g')) > 11 THEN 'CNPJ' ELSE 'CPF' END as tipo, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni JOIN nfe_header nh ON ni.nfe_id_bling = nh.nfe_id_bling WHERE ni.considerar = true AND ni.sku = '${skuSafe}' AND ni.data_emissao >= '2025-11-01' GROUP BY mes, tipo ORDER BY mes, tipo` },
-          { name: "estoque_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data DESC` },
-          { name: "estoque_inicio_mes", sql: `SELECT DISTINCT ON (date_trunc('month', data)) date_trunc('month', data)::date as mes, quantidade as estoque_inicio FROM estoque_historico WHERE sku = '${skuSafe}' AND data >= '${f}' ORDER BY date_trunc('month', data), data ASC` },
+          { name: "estoque_stats_mes", sql: `WITH meses AS (SELECT generate_series(date_trunc('month', '${f}'::date), date_trunc('month', CURRENT_DATE), interval '1 month')::date as mes), reg AS (SELECT data::date as data, quantidade FROM estoque_historico WHERE sku = '${skuSafe}') SELECT m.mes, (SELECT quantidade FROM reg WHERE data < m.mes ORDER BY data DESC LIMIT 1) as estoque_inicio, (SELECT min(quantidade) FROM reg WHERE data >= m.mes AND data < m.mes + interval '1 month') as min_no_mes FROM meses m ORDER BY m.mes` },
         ];
       } else {
         const catId = Number(value);
@@ -198,7 +197,7 @@ export default function Home() {
           { name: "resumo", sql: `SELECT c.nome as categoria, (SELECT count(DISTINCT ni2.sku) FROM nfe_items ni2 WHERE ni2.considerar = true AND ni2.categoria_id = c.id) as total_skus, (SELECT coalesce(sum(ea2.quantidade),0) FROM estoque_atual ea2 WHERE ea2.sku IN (SELECT DISTINCT ni3.sku FROM nfe_items ni3 WHERE ni3.considerar = true AND ni3.categoria_id = c.id)) as estoque_total FROM categorias c WHERE c.id = ${catId}` },
           { name: "vendas_mes", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY mes ORDER BY mes` },
           { name: "vendas_detalhe", sql: `SELECT date_trunc('month', ni.data_emissao)::date as mes, CASE WHEN length(regexp_replace(nh.cliente_doc, '[^0-9]', '', 'g')) > 11 THEN 'CNPJ' ELSE 'CPF' END as tipo, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni JOIN nfe_header nh ON ni.nfe_id_bling = nh.nfe_id_bling WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '2025-11-01' GROUP BY mes, tipo ORDER BY mes, tipo` },
-          { name: "estoque_mes", sql: `WITH cat_skus AS (SELECT DISTINCT sku FROM nfe_items WHERE considerar = true AND categoria_id = ${catId}), monthly AS (SELECT DISTINCT ON (eh.sku, date_trunc('month', eh.data)) eh.sku, date_trunc('month', eh.data)::date as mes, eh.quantidade FROM estoque_historico eh JOIN cat_skus cs ON eh.sku = cs.sku WHERE eh.data >= '${f}' ORDER BY eh.sku, date_trunc('month', eh.data), eh.data DESC) SELECT mes, sum(quantidade) as estoque FROM monthly GROUP BY mes ORDER BY mes` },
+          { name: "estoque_stats_mes", sql: `WITH cat_skus AS (SELECT DISTINCT sku FROM nfe_items WHERE considerar = true AND categoria_id = ${catId}), meses AS (SELECT generate_series(date_trunc('month', '${f}'::date), date_trunc('month', CURRENT_DATE), interval '1 month')::date as mes), por_sku_mes AS (SELECT cs.sku, m.mes, (SELECT quantidade FROM estoque_historico eh WHERE eh.sku = cs.sku AND eh.data::date < m.mes ORDER BY eh.data DESC LIMIT 1) as estoque_inicio, (SELECT min(quantidade) FROM estoque_historico eh WHERE eh.sku = cs.sku AND eh.data::date >= m.mes AND eh.data::date < m.mes + interval '1 month') as min_no_mes FROM cat_skus cs CROSS JOIN meses m) SELECT mes, sum(coalesce(estoque_inicio, 0)) as estoque_inicio, sum(coalesce(min_no_mes, estoque_inicio, 0)) as min_no_mes FROM por_sku_mes GROUP BY mes ORDER BY mes` },
           { name: "top_skus", sql: `SELECT ni.sku, min(ni.descricao) as descricao, round(sum(ni.quantidade)::numeric) as unidades, round(sum(ni.valor_total)::numeric) as faturamento FROM nfe_items ni WHERE ni.considerar = true AND ni.categoria_id = ${catId} AND ni.data_emissao >= '${f}' GROUP BY ni.sku ORDER BY faturamento DESC LIMIT 15` },
         ];
       }
@@ -208,8 +207,7 @@ export default function Home() {
         resumo: (res.resumo || [])[0] || null,
         vendas_mes: res.vendas_mes || [],
         vendas_detalhe: res.vendas_detalhe || [],
-        estoque_mes: res.estoque_mes || [],
-        estoque_inicio_mes: res.estoque_inicio_mes || [],
+        estoque_stats_mes: res.estoque_stats_mes || [],
         top_skus: res.top_skus || [],
       });
     } catch (e) { console.error("gestao load error", e); }
@@ -858,7 +856,7 @@ export default function Home() {
                       {(() => {
                         // Calculate metrics
                         const vendas = gestaoData.vendas_mes || [];
-                        const estoqueIni = gestaoData.estoque_inicio_mes || [];
+                        const estoqueStats = gestaoData.estoque_stats_mes || [];
                         const normD = (d) => typeof d === "string" ? d.substring(0, 10) : d;
                         const totalUn = vendas.reduce((s, v) => s + (Number(v.unidades) || 0), 0);
                         const totalFat = vendas.reduce((s, v) => s + (Number(v.faturamento) || 0), 0);
@@ -868,19 +866,23 @@ export default function Home() {
                         const now = new Date();
                         const totalMeses = Math.max(1, (now.getFullYear() - startDate.getFullYear()) * 12 + now.getMonth() - startDate.getMonth() + 1);
                         const mediaBruta = totalMeses > 0 ? totalUn / totalMeses : 0;
-                        // Build estoque inicio map
-                        const estoqueIniMap = {};
-                        estoqueIni.forEach((e) => { estoqueIniMap[normD(e.mes)] = Number(e.estoque_inicio); });
-                        // Valid months: estoque no dia 1 >= media bruta
-                        // If a month has no stock data, carry forward the last known value
+                        // Build estoque stats map
+                        const statsMap = {};
+                        estoqueStats.forEach((e) => {
+                          statsMap[normD(e.mes)] = {
+                            inicio: e.estoque_inicio != null ? Number(e.estoque_inicio) : null,
+                            min: e.min_no_mes != null ? Number(e.min_no_mes) : null,
+                          };
+                        });
+                        // Mês válido: estoque efetivo >= mediaBruta durante TODO o mês
+                        // estoque efetivo = min_no_mes se houve registro no mês, senão estoque_inicio (carry forward)
                         let mesesValidos = 0;
-                        let lastKnown = null;
                         for (let m = new Date(startDate); m <= now; m.setMonth(m.getMonth() + 1)) {
                           const mk = m.toISOString().split("T")[0].substring(0, 8) + "01";
-                          const est = estoqueIniMap[mk];
-                          if (est != null) lastKnown = est;
-                          const estVal = est != null ? est : lastKnown;
-                          if (estVal != null && estVal >= mediaBruta) mesesValidos++;
+                          const s = statsMap[mk];
+                          if (!s) continue;
+                          const efetivo = s.min != null ? s.min : s.inicio;
+                          if (efetivo != null && efetivo >= mediaBruta) mesesValidos++;
                         }
                         const mesesSemEstoque = totalMeses - mesesValidos;
                         const mediaReal = mesesValidos > 0 ? totalUn / mesesValidos : 0;
@@ -968,8 +970,13 @@ export default function Home() {
                   // Build maps
                   const vendasMap = {};
                   (gestaoData.vendas_mes || []).forEach((v) => { vendasMap[normDate(v.mes)] = v; });
-                  const estoqueMap = {};
-                  (gestaoData.estoque_mes || []).forEach((e) => { estoqueMap[normDate(e.mes)] = Number(e.estoque); });
+                  const statsMap = {};
+                  (gestaoData.estoque_stats_mes || []).forEach((e) => {
+                    statsMap[normDate(e.mes)] = {
+                      inicio: e.estoque_inicio != null ? Number(e.estoque_inicio) : null,
+                      min: e.min_no_mes != null ? Number(e.min_no_mes) : null,
+                    };
+                  });
                   const detMap = {};
                   (gestaoData.vendas_detalhe || []).forEach((d) => {
                     const k = normDate(d.mes);
@@ -979,14 +986,15 @@ export default function Home() {
                   });
 
                   const precoAtual = gestaoData.resumo?.precocusto ? Number(gestaoData.resumo.precocusto) : 0;
-                  // Carry forward estoque for months without data
-                  let lastEstoque = null;
+                  // Estoque mostrado no gráfico: min_no_mes se houve registro (mostra a ruptura),
+                  // senão estoque_inicio (último valor conhecido = carry forward real, não mentiroso).
+                  // Valores negativos (ajustes fantasma) são tratados como 0 visualmente.
                   const merged = allMonths.map((mk) => {
                     const v = vendasMap[mk];
                     const det = detMap[mk];
-                    const estq = estoqueMap[mk];
-                    if (estq != null) lastEstoque = estq;
-                    const estVal = estq != null ? estq : lastEstoque;
+                    const s = statsMap[mk];
+                    const raw = s ? (s.min != null ? s.min : s.inicio) : null;
+                    const estVal = raw != null ? Math.max(0, raw) : null;
                     return {
                       mes: mk, mesLabel: mLabel(mk),
                       unidades: v ? (Number(v.unidades) || 0) : 0,
